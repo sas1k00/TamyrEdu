@@ -8,7 +8,9 @@
   const t = T.t, plural = T.plural;
   const app = document.getElementById('app');
 
-  const ui = { name: '', goal: 'full', diag: null, lesson: null, session: null, banner: null, confirmReset: false };
+  const A = T.account;
+  const ui = { name: '', goal: 'full', diag: null, lesson: null, session: null, banner: null, confirmReset: false,
+    auth: { mode: 'in', email: '', error: null, note: null, busy: false } };
   T.appState = ui;
 
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -81,7 +83,7 @@
         <p class="muted">${t('Диагностика — от нескольких вопросов до нескольких десятков: чем больше пробелов, тем глубже спускаемся. Её можно остановить в любой момент — план построится по тому, что уже известно. Не знаешь ответ — жми «Не знаю»: угадывание портит карту.')}</p>
         ${L.exists() ? `<p class="note">${t('Новая диагностика заменит текущий прогресс.')}</p>` : ''}
         <form id="start-form">
-          <label class="field"><span>${t('Имя')}</span><input id="name" required maxlength="40" autocomplete="given-name" value="${esc(ui.name || (L.exists() ? L.get().name : ''))}" placeholder="${t('Например, Айгерим')}"></label>
+          <label class="field"><span>${t('Имя')}</span><input id="name" required maxlength="40" autocomplete="given-name" value="${esc(ui.name || (L.exists() ? L.get().name : A.user() ? A.user().name : ''))}" placeholder="${t('Например, Айгерим')}"></label>
           <fieldset class="goals"><legend>${t('Что проверяем?')}</legend>
             ${START_GOALS.map(id => T.GOALS.find(g => g.id === id)).filter(Boolean).map(g => `<label class="goal"><input type="radio" name="goal" value="${g.id}" ${g.id === ui.goal ? 'checked' : ''}><span><b>${g.title}</b><small>${g.desc}</small></span></label>`).join('')}
             <label class="goal"><input type="radio" name="goal" value="none" ${ui.goal === 'none' ? 'checked' : ''}><span><b>${t('Без диагностики')}</b><small>${t('Начать с основ: каждая тема проверяется двумя задачами по ходу')}</small></span></label>
@@ -418,6 +420,7 @@
           <p class="lead">${S.diag ? t('Диагностика {date}: {q}, корней найдено: {r}.', { date: fmtDate(S.diag.at), q: questions(S.diag.asked), r: S.diag.roots.length }) : t('Без входной диагностики: темы проверяются по ходу.')}</p></div>
         ${statsHtml()}
       </section>
+      ${A.enabled && !A.user() ? `<p class="banner">${t('Прогресс хранится только на этом устройстве. <a href="#account">Создай аккаунт</a>, чтобы не потерять его.')}</p>` : ''}
       <section class="grid2">
         <div class="card">
           <h2>${t('Твои типичные ошибки')}</h2>
@@ -455,12 +458,15 @@
     app.querySelector('#adv3').addEventListener('click', () => { L.advance(3); location.hash = '#home'; });
     app.querySelector('#reset').addEventListener('click', () => {
       if (!ui.confirmReset) { ui.confirmReset = true; return viewProgress(); }
-      ui.confirmReset = false; L.reset(); location.hash = '#home';
+      ui.confirmReset = false;
+      if (A.user()) A.clearRemote().catch(() => {}); // иначе при следующей сверке прогресс вернётся из облака
+      L.reset(); location.hash = '#home';
     });
   }
 
   /* ---------- Демо: ученица с корневым пробелом в дробях ---------- */
   function demo() {
+    if (A.user()) return go(L.exists() ? '#home' : '#start'); // демо перезаписало бы прогресс в аккаунте
     const rand = T.rng(11);
     const d = new T.Diagnostic(T.GOALS[0].start, { rand });
     const s = T.simulateStudent(['frac'], rand, { known: 1, unknown: 0, misRate: 1 });
@@ -472,12 +478,204 @@
     route();
   }
 
+  /* ---------- Аккаунт ---------- */
+  function go(hash) { if (location.hash === hash) route(); else location.hash = hash; }
+
+  function authError(e) {
+    return {
+      credentials: t('Неверная почта или пароль.'),
+      exists: t('Аккаунт с такой почтой уже есть. Попробуй войти.'),
+      weak: t('Пароль слишком простой: нужно не меньше 8 символов.'),
+      unconfirmed: t('Почта ещё не подтверждена — открой письмо и перейди по ссылке.'),
+      email: t('Проверь адрес почты.'),
+      mailrate: t('Сервер отправил слишком много писем за последний час. Попробуй ещё раз позже.'),
+      rate: t('Слишком много попыток. Подожди минуту и попробуй снова.'),
+      network: t('Нет связи с сервером. Проверь интернет и попробуй ещё раз.')
+    }[e && e.kind] || t('Что-то пошло не так. Попробуй ещё раз позже.');
+  }
+
+  function syncLine() {
+    return {
+      syncing: t('Синхронизация…'), ok: t('Прогресс сохранён в облаке'),
+      offline: t('Нет связи — сохраним, когда появится интернет'), error: t('Не удалось сохранить в облаке')
+    }[A.status().state] || '';
+  }
+
+  /* После входа: сверяемся с облаком и ведём туда, где есть что делать. */
+  async function afterSignIn() {
+    ui.auth = { mode: 'in', email: '', error: null, note: ui.auth.note, busy: false };
+    const r = await A.sync();
+    if (r === 'ask') return go('#account');
+    ui.auth.note = null;
+    go(L.exists() ? '#home' : '#start');
+  }
+
+  async function signOut() {
+    const user = A.user();
+    const own = L.exists() && L.owner() === user.id;
+    const saved = own ? await A.flush() : true;
+    await A.signOut();
+    // Прогресс аккаунта с устройства убираем. Если последние изменения не дошли до облака — оставляем, чтобы не потерять.
+    if (own && saved) L.forget();
+    ui.auth = { mode: 'in', email: '', error: null, note: null, busy: false };
+    if (own && !saved) ui.banner = t('Не удалось сохранить последние изменения в облаке, поэтому прогресс оставлен на этом устройстве.');
+    go(L.exists() ? '#home' : '#account');
+  }
+
+  function viewAccount() {
+    if (!A.enabled) return L.exists() ? viewHome() : viewLanding();
+    if (!A.user()) return viewAuthForm();
+    if (ui.auth.mode === 'newpass') return viewNewPassword();
+    const user = A.user(), st = A.status();
+    const remote = st.state === 'ask' ? A.pending() : null;
+    const done = state => Object.values(state.topics || {}).filter(x => x && (x.st === 'mastered' || x.st === 'solid')).length;
+    const summary = state => t('{n} {themes} · изменён {date}', { n: done(state), themes: plural(done(state), 'тема освоена', 'темы освоены', 'тем освоено'), date: fmtDate(state.updated || state.created || Date.now()) });
+    const own = L.exists() && L.owner() === user.id;
+    app.innerHTML = `
+      <section class="card narrow">
+        <p class="eyebrow">${t('Аккаунт')}</p>
+        <h1>${esc(user.name || user.email)}</h1>
+        <p class="muted">${esc(user.email)}</p>
+        ${ui.auth.note ? `<p class="banner">${esc(ui.auth.note)}</p>` : ''}
+        ${remote ? `
+          <div class="note">
+            <p><b>${t('На этом устройстве уже есть прогресс, и в аккаунте тоже. Какой оставить?')}</b> ${t('Второй вариант будет удалён.')}</p>
+            <div class="row">
+              <button class="btn small" data-keep="remote">${t('Из аккаунта')} · ${esc(summary(remote.state))}</button>
+              <button class="btn small" data-keep="local">${t('С этого устройства')} · ${esc(summary(L.get()))}</button>
+            </div>
+          </div>` : `<p class="sync s-${st.state}">${esc(syncLine())}</p>`}
+        <div class="row">
+          ${remote ? '' : `<button class="btn small" id="sync">${t('Синхронизировать сейчас')}</button>`}
+          <button class="btn small" id="out">${t('Выйти')}</button>
+        </div>
+        ${own ? `<p class="muted small">${t('При выходе прогресс остаётся в аккаунте, а с этого устройства убирается.')}</p>` : ''}
+        <a class="btn ghost" href="#home">${t('На главную')}</a>
+      </section>`;
+    app.querySelectorAll('[data-keep]').forEach(b => b.addEventListener('click', async () => {
+      await A.sync(b.dataset.keep);
+      go(L.exists() ? '#home' : '#start');
+    }));
+    const sync = app.querySelector('#sync');
+    if (sync) sync.addEventListener('click', () => A.sync().then(r => { if (r === 'pull') route(); }));
+    app.querySelector('#out').addEventListener('click', signOut);
+  }
+
+  function viewAuthForm() {
+    const m = ui.auth.mode === 'up' ? 'up' : ui.auth.mode === 'recover' ? 'recover' : 'in';
+    const head = { in: t('Вход в аккаунт'), up: t('Новый аккаунт'), recover: t('Сброс пароля') }[m];
+    const submit = { in: t('Войти'), up: t('Создать аккаунт'), recover: t('Отправить ссылку') }[m];
+    app.innerHTML = `
+      <section class="card narrow">
+        <h1>${head}</h1>
+        <p class="muted">${t('С аккаунтом прогресс сохраняется в облаке: можно продолжить с другого телефона и не потерять его при очистке браузера.')}</p>
+        ${ui.auth.note ? `<p class="banner">${esc(ui.auth.note)}</p>` : ''}
+        ${ui.auth.error ? `<p class="note" role="alert">${esc(ui.auth.error)}</p>` : ''}
+        <form id="auth-form">
+          ${m === 'up' ? `<label class="field"><span>${t('Имя')}</span><input id="name" required maxlength="40" autocomplete="given-name" value="${esc(L.exists() ? L.get().name : '')}" placeholder="${t('Например, Айгерим')}"></label>` : ''}
+          <label class="field"><span>${t('Электронная почта')}</span><input id="email" type="email" required autocomplete="email" value="${esc(ui.auth.email)}"></label>
+          ${m === 'recover' ? '' : `<label class="field"><span>${t('Пароль')}</span><input id="password" type="password" required autocomplete="${m === 'up' ? 'new-password' : 'current-password'}">${m === 'up' ? `<small class="muted">${t('Не короче 8 символов')}</small>` : ''}</label>`}
+          <button class="btn primary" type="submit" ${ui.auth.busy ? 'disabled' : ''}>${submit}</button>
+        </form>
+        <div class="row links">
+          ${m === 'in' ? `<button class="link" data-mode="up">${t('Нет аккаунта? Создать')}</button><button class="link" data-mode="recover">${t('Забыли пароль?')}</button>`
+            : m === 'up' ? `<button class="link" data-mode="in">${t('Уже есть аккаунт? Войти')}</button>`
+            : `<button class="link" data-mode="in">${t('Назад ко входу')}</button>`}
+        </div>
+        ${m === 'up' ? `<p class="muted small">${t('В облаке хранятся только имя, почта и прогресс по темам.')}</p>` : ''}
+      </section>`;
+    app.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
+      ui.auth.email = app.querySelector('#email').value.trim();
+      ui.auth.mode = b.dataset.mode; ui.auth.error = null; ui.auth.note = null;
+      viewAccount();
+    }));
+    app.querySelector('#auth-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      if (ui.auth.busy) return;
+      const email = app.querySelector('#email').value.trim();
+      const password = m === 'recover' ? '' : app.querySelector('#password').value;
+      const name = m === 'up' ? (app.querySelector('#name').value.trim() || t('Ученик')) : '';
+      ui.auth.email = email; ui.auth.error = null; ui.auth.note = null; ui.auth.busy = true;
+      app.querySelector('#auth-form button[type=submit]').disabled = true;
+      try {
+        if (m === 'recover') {
+          await A.recover(email);
+          ui.auth.note = t('Если такой аккаунт есть, мы отправили на {email} ссылку для смены пароля.', { email });
+          ui.auth.mode = 'in';
+        } else if (m === 'up') {
+          if (password.length < 8) throw { kind: 'weak' };
+          if (await A.signUp(name, email, password) === 'signed-in') return await afterSignIn();
+          ui.auth.note = t('Мы отправили письмо на {email}. Открой его и перейди по ссылке, чтобы завершить регистрацию.', { email });
+          ui.auth.mode = 'in';
+        } else {
+          await A.signIn(email, password);
+          return await afterSignIn();
+        }
+      } catch (err) {
+        ui.auth.error = authError(err);
+      } finally {
+        ui.auth.busy = false;
+      }
+      if (location.hash === '#account') viewAccount();
+    });
+  }
+
+  /* Переход по ссылке «сменить пароль» из письма: человек уже вошёл, осталось задать новый пароль. */
+  function viewNewPassword() {
+    app.innerHTML = `
+      <section class="card narrow">
+        <h1>${t('Новый пароль')}</h1>
+        ${ui.auth.error ? `<p class="note" role="alert">${esc(ui.auth.error)}</p>` : ''}
+        <form id="pass-form">
+          <label class="field"><span>${t('Пароль')}</span><input id="password" type="password" required autocomplete="new-password"><small class="muted">${t('Не короче 8 символов')}</small></label>
+          <button class="btn primary" type="submit">${t('Сохранить пароль')}</button>
+        </form>
+      </section>`;
+    app.querySelector('#pass-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const password = app.querySelector('#password').value;
+      ui.auth.error = null;
+      try {
+        if (password.length < 8) throw { kind: 'weak' };
+        await A.setPassword(password);
+        ui.auth.mode = 'in'; ui.auth.note = t('Пароль изменён.');
+        return await afterSignIn();
+      } catch (err) { ui.auth.error = authError(err); }
+      viewAccount();
+    });
+  }
+
+  /* Кнопка аккаунта в шапке и подпись в подвале. */
+  function chromeAccount() {
+    const link = document.getElementById('acct');
+    const user = A.enabled ? A.user() : null;
+    link.hidden = !A.enabled;
+    link.textContent = user ? (user.name || user.email.split('@')[0]) : t('Войти');
+    link.classList.toggle('in', !!user);
+    document.querySelector('.foot').textContent = user ? t('Tamyr · прогресс сохраняется в аккаунте') : t('Tamyr · прогресс хранится на этом устройстве');
+  }
+
+  function initAccount() {
+    chromeAccount();
+    if (!A.enabled) return;
+    const calm = () => ['home', 'map', 'progress', 'account', ''].includes((location.hash.replace('#', '') || 'home').split('/')[0]);
+    A.onChange = chromeAccount;
+    A.onStatus = () => { if (location.hash === '#account' && A.user() && !document.querySelector('#pass-form')) viewAccount(); };
+    if (A.arrival === 'recovery') ui.auth.mode = 'newpass';
+    if (A.arrival === 'confirmed') ui.auth.note = t('Почта подтверждена — ты в аккаунте.');
+    if (A.arrival === 'link-error') ui.auth.error = t('Ссылка из письма не сработала или устарела. Запроси новую.');
+    // Сверка при запуске, при возвращении сети и когда вкладку снова открыли. Экран перерисовываем, только если человек не посреди задачи.
+    const resync = () => { if (A.user()) A.sync().then(r => { if (r === 'ask') go('#account'); else if (r === 'pull' && calm()) route(); }); };
+    resync();
+    window.addEventListener('online', resync);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - A.status().at > 300000) resync(); });
+  }
+
   /* ---------- Шапка: навигация и переключатель языка ---------- */
   function chrome() {
     const nav = { home: t('Сегодня'), map: t('Карта'), progress: t('Прогресс'), teacher: t('Учителю') };
     document.querySelectorAll('[data-nav]').forEach(a => { a.textContent = nav[a.dataset.nav]; });
     document.title = t('Tamyr — подготовка к ЕНТ от корня');
-    document.querySelector('.foot').textContent = t('Tamyr · прогресс хранится на этом устройстве');
     const btn = document.getElementById('lang');
     const other = T.lang === 'kk' ? 'ru' : 'kk';
     btn.textContent = other === 'kk' ? 'Қазақша' : 'Русский';
@@ -490,12 +688,14 @@
     const [view, arg] = h.split('/');
     const group = { lesson: 'home', practice: 'home', check: 'home', start: 'home', setup: 'home', quiz: 'home' }[view] || view;
     document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === group));
+    document.getElementById('acct').classList.toggle('active', view === 'account');
     if (view !== 'progress') ui.confirmReset = false;
     window.scrollTo(0, 0);
     if (view === 'demo') return demo();
     if (view === 'start' || view === 'setup') return viewStart(); // #setup — адрес из хакатонной версии
     if (view === 'quiz') return viewQuiz();
     if (view === 'teacher') return T.viewTeacher(app);
+    if (view === 'account') return viewAccount();
     if (!L.exists()) return viewLanding();
     if (view === 'lesson' && known(arg)) return viewLesson(arg, true);
     if ((view === 'practice' || view === 'check') && known(arg)) return viewSession(view, arg);
@@ -511,5 +711,5 @@
     if (btn) btn.click();
   });
   window.addEventListener('hashchange', route);
-  document.addEventListener('DOMContentLoaded', () => { chrome(); route(); });
+  document.addEventListener('DOMContentLoaded', () => { chrome(); initAccount(); route(); });
 })();

@@ -29,10 +29,12 @@
     try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* приватный режим — живём в памяти */ }
   }
 
+  let owner = null; // id аккаунта, которому принадлежит прогресс на этом устройстве; null — гость
+
   function blank(name) {
     const topics = {};
     T.TOPICS.forEach(t => { topics[t.id] = { st: 'unknown', streak: 0, seen: [], lesson: false, due: null, ivl: 0 }; });
-    return { v: 1, name: name || 'Ученик', created: Date.now(), offset: 0, topics, mis: {}, log: [], days: [], diag: null };
+    return { v: 1, name: name || 'Ученик', created: Date.now(), offset: 0, topics, mis: {}, log: [], days: [], diag: null, owner, updated: 0 };
   }
 
   /* Чужие/старые данные не должны ломать приложение: добавляем недостающие темы, выбрасываем неизвестные статусы. */
@@ -56,11 +58,15 @@
     base.log = Array.isArray(s.log) ? s.log.filter(e => e && T.TOPIC[e.topic]).slice(-60) : [];
     base.days = Array.isArray(s.days) ? s.days.filter(d => typeof d === 'string').slice(-400) : [];
     base.diag = s.diag && typeof s.diag === 'object' ? s.diag : null;
+    base.owner = typeof s.owner === 'string' && s.owner ? s.owner.slice(0, 64) : null;
+    base.updated = Number.isFinite(s.updated) ? s.updated : 0;
     return base;
   }
 
   let S = sanitize(read());
-  const save = () => write(S);
+  owner = S ? S.owner : null;
+  // updated — настоящее время последнего изменения (без демо-сдвига): по нему сверяются устройство и облако
+  const save = () => { S.updated = Date.now(); write(S); if (L.onSave) L.onSave(); };
   const now = () => Date.now() + (S ? S.offset : 0);
   const dayKey = ts => { const d = new Date(ts); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 
@@ -228,7 +234,22 @@
     },
     /* Для демонстрации интервальных повторений: сдвигает «сегодня» вперёд. */
     advance(days) { S.offset += days * DAY; save(); },
-    _load(s) { S = sanitize(s); if (S) save(); return !!S; }
+    _load(s) { S = sanitize(s); if (S) save(); return !!S; },
+
+    /* --- Аккаунт (js/account.js) --- */
+    onSave: null,              // вызывается после каждого сохранения прогресса
+    owner: () => owner,
+    /* Привязать прогресс к аккаунту. Это не изменение прогресса: время updated не трогаем. */
+    setOwner(id) { owner = id || null; if (S) { S.owner = owner; write(S); } },
+    /* Прогресс из облака заменяет локальный. false — данные из облака не прошли проверку. */
+    adopt(state, id) {
+      const s = sanitize(state);
+      if (!s) return false;
+      owner = id || null; s.owner = owner; S = s; write(S);
+      return true;
+    },
+    /* Выход из аккаунта: прогресс с устройства убираем, новый начнётся как гостевой. */
+    forget() { owner = null; L.reset(); }
   };
 
   T.learner = L;

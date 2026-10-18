@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tamyr Academy — тесты</title>
-  <link rel="stylesheet" href="css/style.css?v=10">
+  <link rel="stylesheet" href="css/style.css?v=15">
 </head>
 <body>
   <main>
@@ -15,16 +15,19 @@
       <ul class="tests" id="tests"></ul>
     </section>
   </main>
-  <script src="js/data.js?v=10"></script>
-  <script src="js/data-ent.js?v=10"></script>
+  <script src="js/data.js?v=15"></script>
+  <script src="js/data-ent.js?v=15"></script>
   <script>window.Tamyr.LEARNER_KEY = 'tamyr.academy.test';</script>
-  <script src="js/i18n.js?v=10"></script>
-  <script src="js/engine.js?v=10"></script>
-  <script src="js/content.js?v=10"></script>
-  <script src="js/content-ent.js?v=10"></script>
-  <script src="js/kk-ent.js?v=10"></script>
-  <script src="js/kk.js?v=10"></script>
-  <script src="js/learner.js?v=10"></script>
+  <script src="js/i18n.js?v=15"></script>
+  <script src="js/engine.js?v=15"></script>
+  <script src="js/content.js?v=15"></script>
+  <script src="js/content-ent.js?v=15"></script>
+  <script src="js/kk-ent.js?v=15"></script>
+  <script src="js/kk.js?v=15"></script>
+  <script src="js/learner.js?v=15"></script>
+  <script src="js/config.js?v=15"></script>
+  <script>window.Tamyr.CONFIG = { supabaseUrl: '', supabaseKey: '' }; // тесты всегда идут без облака</script>
+  <script src="js/account.js?v=15"></script>
   <script>
     const T = window.Tamyr, L = T.learner;
     const out = document.getElementById('tests');
@@ -197,12 +200,76 @@
     });
 
     test('Все скрипты приложения разбираются без синтаксических ошибок', () => {
-      ['data', 'data-ent', 'i18n', 'engine', 'content', 'content-ent', 'kk-ent', 'kk', 'learner', 'graph', 'store', 'app', 'teacher'].forEach(name => {
+      ['data', 'data-ent', 'i18n', 'engine', 'content', 'content-ent', 'kk-ent', 'kk', 'learner', 'graph', 'store', 'config', 'account', 'app', 'teacher'].forEach(name => {
         const xhr = new XMLHttpRequest();
         xhr.open('GET', 'js/' + name + '.js?t=' + Date.now(), false); xhr.send();
         assert(xhr.status === 200, 'нет файла ' + name);
         try { new Function(xhr.responseText); } catch (e) { throw new Error(name + '.js: ' + e.message); }
       });
+    });
+
+    /* ---------- Аккаунт и синхронизация ---------- */
+    const A = T.account;
+    test('Аккаунты выключены, пока в config.js нет адреса и ключа, — приложение работает как раньше', () => {
+      eq(A.enabled, false); eq(A.user(), null);
+      eq(T.learner.onSave, null, 'без облака сохранения никуда не уходят: ');
+    });
+    test('Сверка с облаком: кто новее, тот и остаётся; чужой прогресс молча не затирается', () => {
+      const d = A._decide, st = (owner, updated) => ({ owner, updated });
+      eq(d(null, null, 'u1'), 'none');
+      eq(d(st(null, 5), null, 'u1'), 'push', 'гость завёл аккаунт — его прогресс уходит в облако: ');
+      eq(d(null, { state: st('u1', 5) }, 'u1'), 'pull', 'новое устройство: ');
+      eq(d(st('u1', 9), { state: st('u1', 5) }, 'u1'), 'push', 'на устройстве новее: ');
+      eq(d(st('u1', 5), { state: st('u1', 9) }, 'u1'), 'pull', 'в облаке новее: ');
+      eq(d(st('u1', 5), { state: st('u1', 5) }, 'u1'), 'none');
+      eq(d(st(null, 99), { state: st('u1', 1) }, 'u1'), 'ask', 'гостевой прогресс против аккаунта: ');
+      eq(d(st('u2', 99), { state: st('u1', 1) }, 'u1'), 'ask', 'прогресс другого аккаунта: ');
+    });
+    test('Прогресс помнит владельца: новая диагностика его не теряет, выход — стирает', () => {
+      L.reset(); L.forget(); L.startBlank('Тест');
+      eq(L.get().owner, null);
+      const before = L.get().updated;
+      L.setOwner('u1');
+      eq(L.get().owner, 'u1'); eq(L.get().updated, before, 'привязка к аккаунту не считается изменением прогресса: ');
+      seeded(); eq(L.get().owner, 'u1', 'после новой диагностики: ');
+      L.reset(); L.startBlank('Тест'); eq(L.get().owner, 'u1', 'после сброса прогресса: ');
+      L.forget(); eq(L.exists(), false); L.startBlank('Гость'); eq(L.get().owner, null, 'после выхода: ');
+    });
+    test('Каждое сохранение ставит время изменения и сообщает об этом синхронизации', () => {
+      L.reset(); L.forget(); L.startBlank('Тест');
+      let calls = 0; L.onSave = () => { calls++; };
+      const t0 = L.get().updated; assert(t0 > 0, 'время изменения');
+      L.completeLesson('arith');
+      assert(calls === 1 && L.get().updated >= t0, 'сохранение не дошло до синхронизации');
+      L.setOwner('u1'); eq(calls, 1, 'привязка к аккаунту не должна вызывать отправку: ');
+      L.onSave = null;
+    });
+    test('Прогресс из облака проходит ту же проверку, что и локальный', () => {
+      L.reset(); L.forget();
+      assert(!L.adopt({ v: 2 }, 'u1'), 'мусор из облака не принимается'); eq(L.exists(), false);
+      assert(L.adopt({ v: 1, name: 'Из облака', updated: 7, topics: { frac: { st: 'mastered' }, ghost: { st: 'gap' } } }, 'u1'));
+      eq([L.get().name, L.get().owner, L.get().updated, L.topic('frac').st], ['Из облака', 'u1', 7, 'mastered']);
+      L.forget();
+    });
+    test('Сессия собирается из токена: id, почта и имя берутся из JWT', () => {
+      const b64 = o => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const jwt = b64({ alg: 'none' }) + '.' + b64({ sub: 'user-1', email: 'a@b.kz', user_metadata: { name: 'Әлия' } }) + '.x';
+      const s = A._fromTokens({ access_token: jwt, refresh_token: 'r', expires_in: 3600 });
+      eq(s.user, { id: 'user-1', email: 'a@b.kz', name: 'Әлия' });
+      assert(s.expires_at > Date.now() + 3500000, 'срок действия');
+      eq(A._fromTokens({ access_token: 'не токен' }), null);
+      eq(A._fromTokens(null), null);
+    });
+    test('Ошибки сервера превращаются в понятные причины', () => {
+      const k = A._kindOf;
+      eq(k(400, { error_code: 'invalid_credentials', msg: 'Invalid login credentials' }), 'credentials');
+      eq(k(400, { error: 'invalid_grant', error_description: 'Invalid login credentials' }), 'credentials', 'старый формат: ');
+      eq(k(422, { error_code: 'user_already_exists' }), 'exists');
+      eq(k(400, { code: 400, msg: 'User already registered' }), 'exists');
+      eq(k(422, { error_code: 'weak_password' }), 'weak');
+      eq(k(400, { error_code: 'email_not_confirmed' }), 'unconfirmed');
+      eq(k(429, { error_code: 'over_email_send_rate_limit', msg: 'email rate limit exceeded' }), 'mailrate', 'лимит писем: ');
+      eq(k(429, {}), 'rate'); eq(k(401, null), 'auth'); eq(k(500, null), 'server');
     });
 
     /* ---------- Казахский перевод ---------- */
