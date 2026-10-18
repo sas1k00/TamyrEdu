@@ -380,6 +380,17 @@
 
   /* ---------- Карта ---------- */
   function viewMap() {
+    // До диагностики карта всё равно открывается — все темы серые, рядом кнопки, чтобы её раскрасить.
+    if (!L.exists()) {
+      app.innerHTML = `
+        <section class="card">
+          <h1>${t('Карта знаний')}</h1>
+          <p class="muted">${t('Это карта всех тем ЕНТ: основа внизу, сложные темы наверху. Пройди диагностику — и карта раскрасится: что ты уже знаешь, где пробел и с чего начать.')}</p>
+          <div class="cta map-cta"><a class="btn primary" href="#start">${t('Найти мой корень')}</a><a class="btn" href="#demo">${t('Посмотреть на примере')}</a></div>
+          <div id="map-graph"></div>
+        </section>`;
+      return T.renderGraph(app.querySelector('#map-graph'), {});
+    }
     const status = L.statusMap();
     const due = new Set(T.TOPICS.filter(tp => L.isDue(tp.id)).map(tp => tp.id));
     app.innerHTML = `
@@ -696,10 +707,10 @@
     if (view === 'quiz') return viewQuiz();
     if (view === 'teacher') return T.viewTeacher(app);
     if (view === 'account') return viewAccount();
+    if (view === 'map') return viewMap();
     if (!L.exists()) return viewLanding();
     if (view === 'lesson' && known(arg)) return viewLesson(arg, true);
     if ((view === 'practice' || view === 'check') && known(arg)) return viewSession(view, arg);
-    if (view === 'map') return viewMap();
     if (view === 'progress') return viewProgress();
     viewHome();
   }

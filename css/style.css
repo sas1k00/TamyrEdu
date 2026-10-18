@@ -97,6 +97,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 28px 16px 48px; outline: none
 .hero { padding: 24px 0 8px; }
 .hero h1 { max-width: 20ch; }
 .cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.map-cta { margin: 4px 0 16px; }
 .how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 32px 0; }
 .step { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
 .step span { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 700; margin-bottom: 10px; }
@@ -136,6 +137,10 @@ main { max-width: 1180px; margin: 0 auto; padding: 28px 16px 48px; outline: none
 .graph { width: 100%; height: auto; display: block; }
 .edge { fill: none; stroke: var(--line); stroke-width: 2; }
 .edge-bad { stroke: var(--gap); stroke-width: 3; stroke-dasharray: 6 5; }
+.edge { transition: opacity .15s; }
+.graph.focus .edge { opacity: .25; }
+.graph.focus .edge-hl { opacity: 1; stroke: var(--accent); stroke-width: 3; }
+.graph.focus .edge-bad.edge-hl { stroke: var(--gap); }
 .node rect { stroke-width: 2; transition: fill .3s, stroke .3s; }
 .node text { font-size: 18px; font-weight: 600; font-family: inherit; pointer-events: none; }
 .n-unknown rect { fill: var(--surface-2); stroke: var(--unk); }
