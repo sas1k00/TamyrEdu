@@ -209,7 +209,9 @@
         }
         pendingRemote = null;
         if (action === 'pull' && !L.adopt(remote.state, uid)) action = L.exists() ? 'push' : 'none'; // в облаке мусор — не берём
-        if (action === 'push') { L.setOwner(uid); await push(L.get()); }
+        // Дальше прогресс на устройстве — этого аккаунта, в том числе тот, что появится позже (первая диагностика после входа).
+        L.setOwner(uid);
+        if (action === 'push') await push(L.get());
         setStatus('ok');
         return action;
       } catch (e) {
