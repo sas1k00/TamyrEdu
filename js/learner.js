@@ -34,7 +34,7 @@
   function blank(name) {
     const topics = {};
     T.TOPICS.forEach(t => { topics[t.id] = { st: 'unknown', streak: 0, seen: [], lesson: false, due: null, ivl: 0 }; });
-    return { v: 1, name: name || 'Ученик', created: Date.now(), offset: 0, topics, mis: {}, log: [], days: [], diag: null, owner, updated: 0 };
+    return { v: 1, name: name || 'Ученик', created: Date.now(), offset: 0, topics, mis: {}, log: [], days: [], diag: null, owner, updated: 0, demo: false };
   }
 
   /* Чужие/старые данные не должны ломать приложение: добавляем недостающие темы, выбрасываем неизвестные статусы. */
@@ -60,6 +60,7 @@
     base.diag = s.diag && typeof s.diag === 'object' ? s.diag : null;
     base.owner = typeof s.owner === 'string' && s.owner ? s.owner.slice(0, 64) : null;
     base.updated = Number.isFinite(s.updated) ? s.updated : 0;
+    base.demo = s.demo === true;
     return base;
   }
 
@@ -84,9 +85,10 @@
     reset() { S = null; mem = null; try { localStorage.removeItem(KEY); } catch (e) { /* нет хранилища */ } },
     startBlank(name) { S = blank(name); save(); },
 
-    /* Перенос результата диагностики в модель ученика. */
-    fromDiagnostic(name, res) {
+    /* Перенос результата диагностики в модель ученика. demo — прогресс виртуальной ученицы из демо, не настоящий. */
+    fromDiagnostic(name, res, demo) {
       S = blank(name);
+      S.demo = demo === true;
       T.TOPICS.forEach(t => {
         const st = res.status[t.id], x = tp(t.id);
         if (st === 'mastered') { x.st = 'mastered'; x.ivl = 3; x.due = now() + 3 * DAY; }

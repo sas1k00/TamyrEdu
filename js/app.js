@@ -483,7 +483,7 @@
     const s = T.simulateStudent(['frac'], rand, { known: 1, unknown: 0, misRate: 1 });
     let cur; while ((cur = d.next())) d.answer(s.pick(cur));
     const res = d.result();
-    L.fromDiagnostic(t('Айгерим'), res);
+    L.fromDiagnostic(t('Айгерим'), res, true);
     ui.banner = t('Это демо: виртуальная ученица с пробелом в дробях прошла диагностику за {q}. Пройди её план или <a href="#start">начни свою диагностику</a>.', { q: questions(res.asked) });
     history.replaceState(null, '', '#home');
     route();
@@ -676,7 +676,7 @@
     if (A.arrival === 'confirmed') ui.auth.note = t('Почта подтверждена — ты в аккаунте.');
     if (A.arrival === 'link-error') ui.auth.error = t('Ссылка из письма не сработала или устарела. Запроси новую.');
     // Сверка при запуске, при возвращении сети и когда вкладку снова открыли. Экран перерисовываем, только если человек не посреди задачи.
-    const resync = () => { if (A.user()) A.sync().then(r => { if (r === 'ask') go('#account'); else if (r === 'pull' && calm()) route(); }); };
+    const resync = () => { if (A.user()) A.sync().then(r => { if (r === 'ask') go('#account'); else if ((r === 'pull' || !L.exists()) && calm()) route(); }); };
     resync();
     window.addEventListener('online', resync);
     document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - A.status().at > 300000) resync(); });
