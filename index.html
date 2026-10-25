@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tamyr — подготовка к ЕНТ от корня</title>
   <meta name="description" content="Находит корневой пробел, объясняет тему по шагам и возвращает её на повторение, пока она не закрепится.">
-  <link rel="stylesheet" href="css/style.css?v=19">
+  <link rel="stylesheet" href="css/style.css?v=20">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#1f6f5c">
   <link rel="icon" href="icons/icon-192.png">
@@ -17,33 +17,35 @@
       <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><path d="M16 4v12M16 16c-4 2-7 6-8 12M16 16c4 2 7 6 8 12M16 16v12M16 10c-3-1-5-3-6-6M16 10c3-1 5-3 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
       <span>Tamyr <small>Academy</small></span>
     </a>
-    <nav>
-      <a href="#home" data-nav="home">Сегодня</a>
-      <a href="#map" data-nav="map">Карта</a>
-      <a href="#progress" data-nav="progress">Прогресс</a>
-      <a href="#teacher" data-nav="teacher">Учителю</a>
+    <nav class="tabs" aria-label="Разделы">
+      <a href="#home" data-nav="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1z"/></svg><span>Сегодня</span></a>
+      <a href="#map" data-nav="map"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="19" r="2.2"/><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M12 16.8V13c0-2-6-2.5-6-4.8M12 13c0-2 6-2.5 6-4.8"/></svg><span>Карта</span></a>
+      <a href="#progress" data-nav="progress"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V13M12 20V8M19 20V4"/></svg><span>Прогресс</span></a>
+      <a href="#teacher" data-nav="teacher"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.6-3 2.8-5 5.5-5s4.9 2 5.5 5M16 6.5a2.6 2.6 0 0 1 0 5M17.5 14.3c1.6.6 2.7 2.2 3 4.7"/></svg><span>Учителю</span></a>
+    </nav>
+    <div class="tools">
       <a class="acct" id="acct" href="#account" hidden></a>
       <button class="lang" id="lang" type="button" aria-label="Тіл / Язык"></button>
-    </nav>
+    </div>
   </header>
   <main id="app" tabindex="-1"></main>
-  <footer class="foot">Tamyr · прогресс хранится на этом устройстве</footer>
+  <footer class="foot"></footer>
 
-  <script src="js/data.js?v=19"></script>
-  <script src="js/data-ent.js?v=19"></script>
-  <script src="js/i18n.js?v=19"></script>
-  <script src="js/engine.js?v=19"></script>
-  <script src="js/content.js?v=19"></script>
-  <script src="js/content-ent.js?v=19"></script>
-  <script src="js/kk-ent.js?v=19"></script>
-  <script src="js/kk.js?v=19"></script>
-  <script src="js/learner.js?v=19"></script>
-  <script src="js/graph.js?v=19"></script>
-  <script src="js/store.js?v=19"></script>
-  <script src="js/config.js?v=19"></script>
-  <script src="js/account.js?v=19"></script>
-  <script src="js/app.js?v=19"></script>
-  <script src="js/teacher.js?v=19"></script>
+  <script src="js/data.js?v=20"></script>
+  <script src="js/data-ent.js?v=20"></script>
+  <script src="js/i18n.js?v=20"></script>
+  <script src="js/engine.js?v=20"></script>
+  <script src="js/content.js?v=20"></script>
+  <script src="js/content-ent.js?v=20"></script>
+  <script src="js/kk-ent.js?v=20"></script>
+  <script src="js/kk.js?v=20"></script>
+  <script src="js/learner.js?v=20"></script>
+  <script src="js/graph.js?v=20"></script>
+  <script src="js/store.js?v=20"></script>
+  <script src="js/config.js?v=20"></script>
+  <script src="js/account.js?v=20"></script>
+  <script src="js/app.js?v=20"></script>
+  <script src="js/teacher.js?v=20"></script>
   <script>
     // Офлайн-режим: работает на http(s), при открытии файла двойным кликом просто пропускается
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
