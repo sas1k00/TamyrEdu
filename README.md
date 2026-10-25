@@ -9,8 +9,9 @@
 *Тамыр* (каз.) — корень.
 
 **Команда:** Bolatbay Yersultan · Zharkynuly Eren · Kydyrkhan Olzhas
-**Репозиторий:** https://github.com/sas1k00/hackathonchik
-**Демо:** https://sas1k00.github.io/hackathonchik/ *(включите GitHub Pages: Settings → Pages → Deploy from branch → main / root)*
+**Репозиторий:** https://github.com/sas1k00/TamyrEdu
+**Демо:** https://sas1k00.github.io/TamyrEdu/ *(включите GitHub Pages: Settings → Pages → Deploy from branch → main / root)*
+**Версия, сданная на хакатон:** https://github.com/sas1k00/hackathonchik · https://sas1k00.github.io/hackathonchik/ — на неё ссылаются презентация и форма заявки, поэтому она остаётся как есть.
 
 ---
 
@@ -48,7 +49,7 @@
 
 1. Создать проект. Регион — ближайший к Казахстану из доступных.
 2. SQL Editor → вставить `supabase/schema.sql` → Run. Создаётся таблица `progress` и правила, по которым каждый видит только свою строку.
-3. Authentication → URL Configuration: в Site URL и Redirect URLs указать адрес сайта (`https://sas1k00.github.io/hackathonchik/`). На него ведут ссылки из писем.
+3. Authentication → URL Configuration: в Site URL и Redirect URLs указать адрес сайта (`https://sas1k00.github.io/TamyrEdu/`; если работает и сайт хакатонной версии — добавить и `https://sas1k00.github.io/hackathonchik/`). На него ведут ссылки из писем.
 4. Project Settings → API: скопировать Project URL и **publishable**-ключ в `js/config.js`. Секретный ключ в репозиторий класть нельзя.
 5. Для настоящих учеников подключить свою почту (Authentication → SMTP): встроенная отправка писем у Supabase рассчитана на пробу и ограничена несколькими письмами в час.
 
