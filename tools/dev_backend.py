@@ -21,8 +21,10 @@ p.add_argument('--ttl', type=int, default=3600, help='срок жизни ток
 ARGS = p.parse_args()
 
 USERS = {}      # email -> {id, email, salt, hash, name, confirmed}
-ACCESS = {}     # access_token -> (user_id, expires)
-REFRESH = {}    # refresh_token -> user_id
+ACCESS = {}     # access_token -> (user_id, expires, family)
+REFRESH = {}    # refresh_token -> (user_id, family); family — один вход, который живёт через цепочку обновлений
+USED = {}       # потраченный refresh_token -> (user_id, family, когда потрачен)
+REUSE = 10      # как в Supabase: 10 с старый refresh_token ещё принимают (две вкладки обновились одновременно)
 PROGRESS = {}   # user_id -> {user_id, state, updated_at}
 VERIFY = {}     # одноразовый токен из письма -> (user_id, kind, redirect)
 
@@ -35,15 +37,16 @@ def hash_password(password, salt):
     return hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100_000).hex()
 
 
-def session_for(user):
+def session_for(user, family=None):
+    family = family or secrets.token_urlsafe(8)
     exp = time.time() + ARGS.ttl
     # Токен выглядит как JWT (приложение читает из него id и почту), но не подписан: проверка — по таблице ACCESS.
     token = '.'.join([b64({'alg': 'none', 'typ': 'JWT'}),
                       b64({'sub': user['id'], 'email': user['email'], 'exp': int(exp), 'user_metadata': {'name': user['name']}}),
                       secrets.token_urlsafe(16)])
     refresh = secrets.token_urlsafe(24)
-    ACCESS[token] = (user['id'], exp)
-    REFRESH[refresh] = user['id']
+    ACCESS[token] = (user['id'], exp, family)
+    REFRESH[refresh] = (user['id'], family)
     return {'access_token': token, 'token_type': 'bearer', 'expires_in': ARGS.ttl, 'refresh_token': refresh,
             'user': {'id': user['id'], 'email': user['email'], 'user_metadata': {'name': user['name']}}}
 
@@ -157,11 +160,22 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(400, {'code': 400, 'error_code': 'email_not_confirmed', 'msg': 'Email not confirmed'})
                 return self.send(200, session_for(user))
             if q.get('grant_type') == 'refresh_token':
-                uid = REFRESH.pop(str(b.get('refresh_token', '')), None)   # одноразовый, как в Supabase
-                user = by_id(uid) if uid else None
-                if not user:
-                    return self.send(400, {'code': 400, 'error_code': 'refresh_token_not_found', 'msg': 'Invalid Refresh Token'})
-                return self.send(200, session_for(user))
+                # Как в Supabase: refresh_token одноразовый. Повтор старого после REUSE секунд считается кражей,
+                # и весь вход отзывается — на всех вкладках и устройствах, где он был.
+                tok = str(b.get('refresh_token', ''))
+                if tok in REFRESH:
+                    uid, family = REFRESH.pop(tok)
+                    USED[tok] = (uid, family, time.time())
+                    return self.send(200, session_for(by_id(uid), family))
+                if tok in USED:
+                    uid, family, at = USED[tok]
+                    if time.time() - at <= REUSE and any(f == family for _, f in REFRESH.values()):
+                        return self.send(200, session_for(by_id(uid), family))
+                    for t, (_, f) in list(REFRESH.items()):
+                        if f == family:
+                            del REFRESH[t]
+                    return self.send(400, {'code': 400, 'error_code': 'refresh_token_already_used', 'msg': 'Invalid Refresh Token: Already Used'})
+                return self.send(400, {'code': 400, 'error_code': 'refresh_token_not_found', 'msg': 'Invalid Refresh Token: Refresh Token Not Found'})
             return self.send(400, {'code': 400, 'error_code': 'unsupported_grant_type', 'msg': 'unsupported grant type'})
 
         if path == '/auth/v1/recover' and method == 'POST':
@@ -177,8 +191,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(401, {'code': 401, 'error_code': 'bad_jwt', 'msg': 'invalid JWT'})
 
         if path == '/auth/v1/logout' and method == 'POST':
+            # Как в Supabase: по умолчанию scope=global — выход на всех устройствах; local — только этот вход.
             token = self.headers['Authorization'].replace('Bearer ', '', 1)
-            ACCESS.pop(token, None)
+            family = ACCESS[token][2]
+            gone = lambda uid, f: uid == user['id'] and (q.get('scope', 'global') == 'global' or f == family)
+            for t, (uid, f) in list(REFRESH.items()):
+                if gone(uid, f):
+                    del REFRESH[t]
+            ACCESS.pop(token, None)   # остальные access-токены, как JWT в Supabase, живут до своего срока
             return self.send(204)
 
         if path == '/auth/v1/user':

@@ -15,9 +15,13 @@
   const base = String(cfg.supabaseUrl || '').replace(/\/+$/, '');
   const enabled = !!(base && cfg.supabaseKey);
 
-  let session = null;
-  try { session = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { session = null; }
-  if (!session || typeof session.access_token !== 'string' || !session.user || typeof session.user.id !== 'string') session = null;
+  /* Сессия общая для всех вкладок сайта: она лежит в localStorage, а в памяти — её копия. */
+  function readStored() {
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { s = null; }
+    return s && typeof s.access_token === 'string' && s.user && typeof s.user.id === 'string' ? s : null;
+  }
+  let session = readStored();
 
   function store(s) {
     session = s;
@@ -83,30 +87,73 @@
     return body;
   }
 
-  /* Токен живёт около часа: обновляем заранее. Если сервер отказал — сессия закончилась, выходим. */
+  /*
+   * Токен живёт около часа: обновляем заранее.
+   * Refresh-токен в Supabase одноразовый, а повтор уже потраченного считается кражей: сервер отзывает весь вход —
+   * на всех вкладках и устройствах. Поэтому, если сайт открыт в двух вкладках (или вкладка + установленное приложение),
+   * обновляет только одна, а остальные берут её новый токен из localStorage:
+   *   • обновление идёт под общим для вкладок замком (Web Locks), и перед ним перечитывается localStorage;
+   *   • другая вкладка, обновив токен, пишет его в localStorage — событие storage подхватывает его здесь;
+   *   • выходим из аккаунта, только когда сервер точно отверг токен и никакая вкладка не успела получить новый.
+   *     Ошибки сервера (5xx) и лимиты не выкидывают из аккаунта — попробуем позже.
+   */
+  window.addEventListener('storage', e => {
+    if (e.key !== KEY && e.key !== null) return;
+    const before = session ? session.user.id : null;
+    session = readStored();
+    if ((session ? session.user.id : null) !== before) changed();
+  });
+  const sameLogin = (a, b) => !!a && !!b && a.user.id === b.user.id;
+  // Сессию заменила другая вкладка, пока мы ждали?
+  function replaced(old) {
+    const now = readStored();
+    if (sameLogin(now, old) && now.refresh_token !== old.refresh_token) { session = now; return true; }
+    return false;
+  }
+  function endSession(old) {
+    if (replaced(old)) return;
+    store(null); changed();
+  }
+  const withLock = fn => (navigator.locks && navigator.locks.request ? navigator.locks.request(KEY, fn) : fn());
+
   let refreshing = null;
-  function fresh() {
+  function fresh(force) {
     if (!session) return Promise.reject(new ApiError('auth', 401));
-    if (session.expires_at - Date.now() > 60000) return Promise.resolve();
-    if (!session.refresh_token) { store(null); changed(); return Promise.reject(new ApiError('auth', 401)); }
-    if (!refreshing) {
-      const old = session;
-      refreshing = call('/auth/v1/token?grant_type=refresh_token', { method: 'POST', body: { refresh_token: old.refresh_token } })
-        .then(r => {
-          const s = fromTokens(r);
-          if (!s) throw new ApiError('auth', 401);
-          if (!s.user.name) s.user.name = old.user.name;
-          store(s);
-        })
-        .catch(e => { if (e.kind !== 'network') { store(null); changed(); } throw e; })
-        .finally(() => { refreshing = null; });
-    }
+    if (!force && session.expires_at - Date.now() > 60000) return Promise.resolve();
+    if (!refreshing) refreshing = withLock(() => refresh(force)).finally(() => { refreshing = null; });
     return refreshing;
+  }
+  async function refresh(force) {
+    const old = session;
+    if (!old) throw new ApiError('auth', 401);
+    if (replaced(old)) return;                                   // другая вкладка уже обновила — берём её токен
+    if (!force && old.expires_at - Date.now() > 60000) return;
+    if (!old.refresh_token) { endSession(old); throw new ApiError('auth', 401); }
+    try {
+      const s = fromTokens(await call('/auth/v1/token?grant_type=refresh_token', { method: 'POST', body: { refresh_token: old.refresh_token } }));
+      if (!s) throw new ApiError('auth', 401);
+      if (!s.user.name) s.user.name = old.user.name;
+      store(s);
+    } catch (e) {
+      if (e.status === 400 || e.status === 401 || e.status === 403) { // сервер отверг refresh-токен
+        if (replaced(old)) return;
+        endSession(old);
+      }
+      throw e;
+    }
   }
   async function authed(path, opts) {
     await fresh();
-    try { return await call(path, Object.assign({ auth: true }, opts)); }
-    catch (e) { if (e.kind === 'auth') { store(null); changed(); } throw e; }
+    const go = () => call(path, Object.assign({ auth: true }, opts));
+    try { return await go(); }
+    catch (e) {
+      if (e.status !== 401) throw e;
+      // Токен могли отозвать или заменить раньше срока — один раз обновляем и повторяем, и только потом сдаёмся.
+      await fresh(true);
+      const cur = session;
+      try { return await go(); }
+      catch (e2) { if (e2.status === 401 && cur) endSession(cur); throw e2; }
+    }
   }
 
   let status = { state: 'idle', at: 0 }; // idle | syncing | ok | offline | error | ask
@@ -185,7 +232,8 @@
     },
     async signOut() {
       if (timer) { clearTimeout(timer); timer = null; }
-      if (session) { try { await call('/auth/v1/logout', { method: 'POST', auth: true }); } catch (e) { /* токен всё равно забываем */ } }
+      // scope=local: выходим только на этом устройстве. По умолчанию Supabase выкидывает из аккаунта везде — и с телефона тоже.
+      if (session) { try { await call('/auth/v1/logout?scope=local', { method: 'POST', auth: true }); } catch (e) { /* токен всё равно забываем */ } }
       pendingRemote = null; status = { state: 'idle', at: 0 };
       store(null); changed();
     },
