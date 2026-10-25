@@ -10,8 +10,8 @@
 (function () {
   const T = window.Tamyr;
   T.CONFIG = {
-    supabaseUrl: 'https://eczcklthrcfsdhdsbipp.supabase.co',
-    supabaseKey: 'sb_publishable_Wni4b5jbnNLfMzx6NUIgFQ_5uGKBPqJ'
+    supabaseUrl: 'https://olijvvquxrliefgflckb.supabase.co',
+    supabaseKey: 'sb_publishable_1taXe53GH0c2t87zJWbpuA_081tl5m_'
   };
 
   // Локальная разработка: index.html?backend=http://127.0.0.1:8772 подключает tools/dev_backend.py.
