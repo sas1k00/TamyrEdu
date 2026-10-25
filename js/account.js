@@ -201,6 +201,7 @@
       setStatus('syncing');
       try {
         const remote = choice && pendingRemote ? pendingRemote : await pull();
+        if (L.exists() && L.get().demo) L.reset(); // демо — не прогресс ученика: в аккаунт его не переносим
         let action = decide(L.exists() ? L.get() : null, remote, uid);
         if (action === 'ask') {
           if (!choice) { pendingRemote = remote; setStatus('ask'); return 'ask'; }
