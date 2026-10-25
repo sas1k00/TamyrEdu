@@ -168,9 +168,10 @@
     onChange: null,           // вошёл / вышел
     onStatus: null,           // изменилось состояние синхронизации
 
-    /* 'signed-in' — сразу вошёл; 'confirm' — нужно подтвердить почту по ссылке из письма. */
+    /* 'signed-in' — сразу вошёл; 'confirm' — нужно подтвердить почту по ссылке из письма.
+       consent_at — когда отмечено согласие на хранение данных (видно в Supabase: Authentication → Users). */
     async signUp(name, email, password) {
-      const r = await call('/auth/v1/signup?redirect_to=' + encodeURIComponent(here()), { method: 'POST', body: { email, password, data: { name } } });
+      const r = await call('/auth/v1/signup?redirect_to=' + encodeURIComponent(here()), { method: 'POST', body: { email, password, data: { name, consent_at: new Date().toISOString() } } });
       if (!r || !r.access_token) return 'confirm';
       const s = fromTokens(r);
       if (!s) throw new ApiError('server', 0);

@@ -586,6 +586,7 @@
           ${m === 'up' ? `<label class="field"><span>${t('Имя')}</span><input id="name" required maxlength="40" autocomplete="given-name" value="${esc(L.exists() ? L.get().name : '')}" placeholder="${t('Например, Айгерим')}"></label>` : ''}
           <label class="field"><span>${t('Электронная почта')}</span><input id="email" type="email" required autocomplete="email" value="${esc(ui.auth.email)}"></label>
           ${m === 'recover' ? '' : `<label class="field"><span>${t('Пароль')}</span><input id="password" type="password" required autocomplete="${m === 'up' ? 'new-password' : 'current-password'}">${m === 'up' ? `<small class="muted">${t('Не короче 8 символов')}</small>` : ''}</label>`}
+          ${m === 'up' ? `<label class="consent"><input id="consent" type="checkbox" required><span>${t('Мне есть 18 лет, или мой родитель (законный представитель) согласен, чтобы сайт хранил моё имя, почту и прогресс.')}</span></label>` : ''}
           <button class="btn primary" type="submit" ${ui.auth.busy ? 'disabled' : ''}>${submit}</button>
         </form>
         <div class="row links">

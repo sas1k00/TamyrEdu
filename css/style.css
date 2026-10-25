@@ -338,6 +338,8 @@ textarea { width: 100%; font: .8rem/1.4 ui-monospace, Consolas, monospace; paddi
 .acct.active { outline: 2px solid var(--accent); outline-offset: 2px; }
 .acct[hidden] { display: none; }
 .field small { font-weight: 400; }
+.consent { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 18px; font-size: .92rem; line-height: 1.45; cursor: pointer; }
+.consent input { flex: none; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--accent); }
 .links { justify-content: space-between; margin-top: 14px; }
 .sync { font-weight: 600; }
 .sync.s-ok { color: var(--ok); }
