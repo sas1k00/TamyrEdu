@@ -70,7 +70,7 @@
     if (opts.auth) headers.Authorization = 'Bearer ' + session.access_token;
     // На плохой связи запрос может висеть минутами — обрываем сами и считаем, что сети нет.
     const ctl = new AbortController();
-    const timeout = setTimeout(() => ctl.abort(), 12000);
+    const timeout = setTimeout(() => ctl.abort(), opts.timeout || 12000);
     let res;
     try {
       res = await fetch(base + path, { method: opts.method || 'GET', headers, body: opts.body ? JSON.stringify(opts.body) : undefined, signal: ctl.signal });
@@ -226,6 +226,9 @@
       return mine() ? pushNow() : true;
     },
     async clearRemote() { if (enabled && session) await authed(rowUrl(), { method: 'DELETE' }); },
+    /* Объяснение ошибки от ИИ (supabase/functions/explain). Ответ модели ждём дольше обычного запроса. */
+    // Без authed(): если функция ответит 401 (например, неверно настроена), ученика не выкидываем из аккаунта.
+    async explain(task) { await fresh(); return (await call('/functions/v1/explain', { method: 'POST', auth: true, body: task, timeout: 40000 })).text; },
 
     _decide: decide, _claims: claims, _fromTokens: fromTokens, _kindOf: kindOf
   };

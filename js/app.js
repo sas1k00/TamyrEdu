@@ -301,7 +301,7 @@
   function newQuestion(s) {
     s.q = T.nextQuestion(s.topic, L.topic(s.topic).seen);
     s.opts = T.shuffle(s.q.options, Math.random);
-    s.hints = 0; s.answered = null; s.flagged = null;
+    s.hints = 0; s.answered = null; s.flagged = null; s.ai = null;
   }
 
   function viewSession(mode, id) {
@@ -337,6 +337,7 @@
           : `<p class="bad-msg">${a.opt ? t('Неверно.') : t('Ничего страшного.')} ${t('Правильный ответ: <b>{a}</b>.', { a: math(s.opts.find(o => o.ok).t) })}</p>`}
         ${m ? `<p><b>${t('Похоже на типичную ошибку:')}</b> ${esc(m.title[0].toLowerCase() + m.title.slice(1))}. ${math(m.fix)}</p>` : ''}
         ${s.flagged ? `<p class="note">${t('Эта ошибка родом из темы «{topic}» — она поставлена на проверку сегодня.', { topic: esc(title(s.flagged)) })}</p>` : ''}
+        ${a.ok ? '' : aiBox(s)}
         ${sol.length ? `<h3>${t('Разбор')}</h3><ol class="steps">${sol.map(x => `<li><span class="m">${math(x)}</span></li>`).join('')}</ol>` : ''}
         <div class="row">
           <button class="btn primary" id="next">${nextLabel}</button>
@@ -379,12 +380,51 @@
       const hint = app.querySelector('#hint');
       if (hint) hint.addEventListener('click', () => { s.hints++; renderSession(); });
     } else {
+      const ask = app.querySelector('#ai-ask');
+      if (ask) ask.addEventListener('click', () => explainMistake(s, tp, sol));
       app.querySelector('#next').addEventListener('click', () => {
         if (practice ? s.mastered : s.n >= L.CHECK_SIZE) return finishSession();
         newQuestion(s);
         renderSession();
       });
     }
+  }
+
+  /* «Объясни мою ошибку»: ИИ (Claude) объясняет именно выбранный неверный ответ. Только для вошедших — на сервере лимит в день. */
+  function aiBox(s) {
+    if (!A.enabled || !T.CONFIG.ai) return '';
+    if (!A.user()) return `<p class="muted small">${t('<a href="#account">Войди</a>, и ИИ объяснит именно твою ошибку.')}</p>`;
+    const ai = s.ai;
+    if (ai && ai.text) {
+      return `<div class="ai-box"><p class="ai-head"><span class="ai-spark" aria-hidden="true">✦</span> ${t('Объяснение Tamyr AI')}</p>
+        ${ai.text.split(/\n+/).map(p => `<p>${math(p)}</p>`).join('')}
+        <p class="muted tiny">${t('Объяснение написал ИИ — он может ошибаться. Правильный ответ и разбор ниже проверены.')}</p></div>`;
+    }
+    if (ai === 'loading') return `<div class="ai-box loading" role="status"><span class="ai-dots" aria-hidden="true"><i></i><i></i><i></i></span> ${t('Tamyr AI разбирает твой ответ…')}</div>`;
+    const err = ai && ai.error ? `<p class="bad-msg small" role="alert">${esc(ai.error)}</p>` : '';
+    if (ai && ai.limit) return err;
+    return `${err}<button class="btn ai-btn" id="ai-ask"><span class="ai-spark" aria-hidden="true">✦</span> ${ai && ai.error ? t('Попробовать ещё раз') : t('Объясни мою ошибку')}</button>`;
+  }
+
+  async function explainMistake(s, tp, sol) {
+    const a = s.answered, m = a.opt && a.opt.mis ? T.MISCONCEPTIONS[a.opt.mis] : null, q = s.q;
+    s.ai = 'loading'; renderSession();
+    let result;
+    try {
+      result = { text: await A.explain({
+        lang: T.lang, topic: tp.title, rule: tp.rule, question: q.text, options: s.opts.map(o => o.t),
+        correct: s.opts.find(o => o.ok).t, chosen: a.opt ? a.opt.t : null,
+        mistake: m ? { title: m.title, fix: m.fix } : null, solution: sol
+      }) };
+    } catch (e) {
+      result = e.status === 429 ? { limit: true, error: t('На сегодня объяснения ИИ закончились — завтра будут новые. Разбор ниже всегда доступен.') }
+        : e.kind === 'network' ? { error: t('Нет связи с сервером. Проверь интернет и попробуй ещё раз.') }
+        : e.kind === 'auth' ? { error: t('Нужно войти заново, чтобы получить объяснение.') }
+        : { error: t('Не получилось получить объяснение. Попробуй ещё раз чуть позже.') };
+    }
+    if (ui.session !== s || s.q !== q) return; // ученик уже ушёл к другой задаче
+    s.ai = result;
+    renderSession();
   }
 
   function finishSession() {

@@ -462,6 +462,21 @@ sup { font-size: .7em; }
   100% { opacity: 0; transform: translate(var(--x), calc(var(--y) + 420px)) rotate(var(--r)); }
 }
 
+/* ИИ-объяснение */
+.ai-btn { margin: 4px 0 14px; border-color: color-mix(in srgb, var(--learn) 45%, var(--line)); color: var(--learn); background: var(--learn-soft); }
+.ai-btn:hover { border-color: var(--learn); }
+.ai-spark { color: var(--learn); font-size: 1.05em; }
+.ai-box { background: var(--surface); border: 1px solid color-mix(in srgb, var(--learn) 35%, var(--line)); border-radius: 14px; padding: 14px 16px; margin: 8px 0 14px; box-shadow: 0 6px 18px -12px var(--learn); animation: rise .35s var(--ease); }
+.ai-box p { margin: 0 0 8px; }
+.ai-box p:last-child { margin: 0; }
+.ai-head { font-weight: 700; color: var(--learn); }
+.ai-box.loading { color: var(--ink-2); display: flex; align-items: center; gap: 10px; }
+.ai-dots { display: inline-flex; gap: 4px; }
+.ai-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--learn); animation: dot 1s ease-in-out infinite; }
+.ai-dots i:nth-child(2) { animation-delay: .15s; }
+.ai-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes dot { 0%, 100% { opacity: .25; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-3px); } }
+
 /* Карта, которая шире экрана: края гаснут */
 .scrolls { -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent); scrollbar-width: thin; }
 

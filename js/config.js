@@ -11,7 +11,9 @@
   const T = window.Tamyr;
   T.CONFIG = {
     supabaseUrl: 'https://olijvvquxrliefgflckb.supabase.co',
-    supabaseKey: 'sb_publishable_1taXe53GH0c2t87zJWbpuA_081tl5m_'
+    supabaseKey: 'sb_publishable_1taXe53GH0c2t87zJWbpuA_081tl5m_',
+    // Кнопка «Объясни мою ошибку». Включать после того, как функция explain задеплоена (README → «ИИ-объяснения»).
+    ai: false
   };
 
   // Локальная разработка: index.html?backend=http://127.0.0.1:8772 подключает tools/dev_backend.py.
@@ -24,6 +26,6 @@
       if (m) sessionStorage.setItem(DEV, decodeURIComponent(m[1]));
       url = sessionStorage.getItem(DEV);
     } catch (e) { url = m ? decodeURIComponent(m[1]) : null; }
-    if (url && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(url)) T.CONFIG = { supabaseUrl: url, supabaseKey: 'dev' };
+    if (url && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(url)) T.CONFIG = { supabaseUrl: url, supabaseKey: 'dev', ai: true };
   }
 })();
