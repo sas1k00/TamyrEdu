@@ -37,11 +37,14 @@
     const c = r && claims(r.access_token);
     if (!c || typeof c.sub !== 'string') return null;
     const meta = (r.user && r.user.user_metadata) || c.user_metadata || {};
+    // Роль ставит только владелец проекта (supabase/teachers.sql): app_metadata ученик изменить не может.
+    const app = (r.user && r.user.app_metadata) || c.app_metadata || {};
     return {
       access_token: r.access_token,
       refresh_token: r.refresh_token || null,
       expires_at: Date.now() + (Number(r.expires_in) || 3600) * 1000,
-      user: { id: c.sub, email: String((r.user && r.user.email) || c.email || ''), name: typeof meta.name === 'string' ? meta.name.slice(0, 40) : '' }
+      user: { id: c.sub, email: String((r.user && r.user.email) || c.email || ''), name: typeof meta.name === 'string' ? meta.name.slice(0, 40) : '',
+        role: app.role === 'teacher' ? 'teacher' : 'student' }
     };
   }
 
@@ -162,6 +165,16 @@
   const A = {
     enabled,
     user: () => (session ? session.user : null),
+    isTeacher: () => !!session && session.user.role === 'teacher',
+    /* Роль могли выдать или снять уже после входа: спрашиваем у сервера свежую. true — роль изменилась. */
+    async refreshRole() {
+      if (!enabled || !session) return false;
+      const u = await authed('/auth/v1/user');
+      const role = u && u.app_metadata && u.app_metadata.role === 'teacher' ? 'teacher' : 'student';
+      if (!session || session.user.role === role) return false;
+      session.user.role = role; store(session); changed();
+      return true;
+    },
     status: () => status,
     pending: () => pendingRemote,
     arrival: takeUrlTokens(), // 'confirmed' | 'recovery' | 'link-error' | null

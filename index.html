@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tamyr — подготовка к ЕНТ от корня</title>
   <meta name="description" content="Находит корневой пробел, объясняет тему по шагам и возвращает её на повторение, пока она не закрепится.">
-  <link rel="stylesheet" href="css/style.css?v=22">
+  <link rel="stylesheet" href="css/style.css?v=23">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#1f6f5c">
   <link rel="icon" href="icons/icon-192.png">
@@ -21,7 +21,7 @@
       <a href="#home" data-nav="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1z"/></svg><span>Сегодня</span></a>
       <a href="#map" data-nav="map"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="19" r="2.2"/><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M12 16.8V13c0-2-6-2.5-6-4.8M12 13c0-2 6-2.5 6-4.8"/></svg><span>Карта</span></a>
       <a href="#progress" data-nav="progress"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V13M12 20V8M19 20V4"/></svg><span>Прогресс</span></a>
-      <a href="#teacher" data-nav="teacher"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.6-3 2.8-5 5.5-5s4.9 2 5.5 5M16 6.5a2.6 2.6 0 0 1 0 5M17.5 14.3c1.6.6 2.7 2.2 3 4.7"/></svg><span>Учителю</span></a>
+      <a href="#teacher" data-nav="teacher" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.6-3 2.8-5 5.5-5s4.9 2 5.5 5M16 6.5a2.6 2.6 0 0 1 0 5M17.5 14.3c1.6.6 2.7 2.2 3 4.7"/></svg><span>Учителю</span></a>
     </nav>
     <div class="tools">
       <a class="acct" id="acct" href="#account" hidden></a>
@@ -31,22 +31,22 @@
   <main id="app" tabindex="-1"></main>
   <footer class="foot"></footer>
 
-  <script src="js/data.js?v=22"></script>
-  <script src="js/data-ent.js?v=22"></script>
-  <script src="js/i18n.js?v=22"></script>
-  <script src="js/engine.js?v=22"></script>
-  <script src="js/content.js?v=22"></script>
-  <script src="js/content-ent.js?v=22"></script>
-  <script src="js/kk-ent.js?v=22"></script>
-  <script src="js/kk.js?v=22"></script>
-  <script src="js/fsrs.js?v=22"></script>
-  <script src="js/learner.js?v=22"></script>
-  <script src="js/graph.js?v=22"></script>
-  <script src="js/store.js?v=22"></script>
-  <script src="js/config.js?v=22"></script>
-  <script src="js/account.js?v=22"></script>
-  <script src="js/app.js?v=22"></script>
-  <script src="js/teacher.js?v=22"></script>
+  <script src="js/data.js?v=23"></script>
+  <script src="js/data-ent.js?v=23"></script>
+  <script src="js/i18n.js?v=23"></script>
+  <script src="js/engine.js?v=23"></script>
+  <script src="js/content.js?v=23"></script>
+  <script src="js/content-ent.js?v=23"></script>
+  <script src="js/kk-ent.js?v=23"></script>
+  <script src="js/kk.js?v=23"></script>
+  <script src="js/fsrs.js?v=23"></script>
+  <script src="js/learner.js?v=23"></script>
+  <script src="js/graph.js?v=23"></script>
+  <script src="js/store.js?v=23"></script>
+  <script src="js/config.js?v=23"></script>
+  <script src="js/account.js?v=23"></script>
+  <script src="js/app.js?v=23"></script>
+  <script src="js/teacher.js?v=23"></script>
   <script>
     // Офлайн-режим: работает на http(s), при открытии файла двойным кликом просто пропускается
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
