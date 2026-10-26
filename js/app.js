@@ -17,6 +17,14 @@
   const title = id => T.TOPIC[id].title;
   const known = id => Object.prototype.hasOwnProperty.call(T.TOPIC, id);
   const fmtDate = T.fmtDate;
+  /* Математика в тексте: «1/2», «√3/2», «x²/2» — дробью в столбик, «(1/2)^x» — степенью. Единицы вроде «км/ч» не трогаем.
+     Косая черта остаётся в разметке (скрыта), поэтому копирование и экранный диктор получают «1/2». */
+  const ATOM = '(?:√?(?:[0-9]+(?:[.,][0-9]+)?|π|[a-zA-Z])[²³⁰¹⁴-⁹ⁿ⁺⁻]*)+';
+  const FRAC = new RegExp('(^|[^0-9a-zA-Zа-яёәғқңөұүһіА-ЯЁӘҒҚҢӨҰҮҺІ)\\]²³⁰¹⁴-⁹ⁿ⁺⁻.,/])(' + ATOM + ')/(' + ATOM + ')(?![0-9a-zA-Z/])', 'g');
+  const math = s => esc(s)
+    .replace(FRAC, (m, pre, a, b) => `${pre}<span class="frac"><span>${a}</span><i>/</i><span>${b}</span></span>`)
+    .replace(/\^(\(?[−-]?[0-9a-zA-Z]+\)?)/g, '<sup>$1</sup>');
+  T.math = math;
   const questions = n => `${n} ${plural(n, 'вопрос', 'вопроса', 'вопросов')}`;
 
   const statusLabel = st => ({
@@ -56,6 +64,7 @@
   function viewLanding() {
     app.innerHTML = `
       <section class="hero">
+        <div class="hero-text">
         <p class="eyebrow">${t('Подготовка к ЕНТ · математика')}</p>
         <h1>${t('Не «повтори всё».<br>А с чего начать именно тебе.')}</h1>
         <p class="lead">${t('Tamyr находит тему, из-за которой сыплются остальные, объясняет её по шагам и возвращается к ней, пока она не закрепится. Каждый день — короткий план, собранный под твои ошибки.')}</p>
@@ -64,13 +73,35 @@
           <a class="btn" href="#demo">${t('Посмотреть на примере')}</a>
           <a class="btn ghost" href="#teacher">${t('Панель учителя')}</a>
         </div>
+        <ul class="facts"><li><b>${T.TOPICS.length}</b> ${t('тем ЕНТ на одной карте')}</li><li><b>RU · KZ</b> ${t('два языка')}</li><li><b>${t('Бесплатно')}</b> ${t('и работает без интернета')}</li></ul>
+        </div>
+        ${heroArt()}
       </section>
       <section class="how">
         <div class="step"><span>1</span><h3>${t('Диагноз')}</h3><p>${t('Начинаем со сложной темы и спускаемся вниз только там, где ты ошибаешься. Неверный ответ показывает, какая именно ошибка мышления за ним стоит.')}</p></div>
         <div class="step"><span>2</span><h3>${t('Урок и практика')}</h3><p>${t('Правило, разбор примера по шагам и задачи с подсказками. После ошибки — объяснение именно твоей ошибки, а не просто «неверно».')}</p></div>
         <div class="step"><span>3</span><h3>${t('Закрепление')}</h3><p>${t('Освоенная тема возвращается через день, потом через три, потом через девять. Знание остаётся до экзамена, а не до вечера.')}</p></div>
       </section>
-      <p class="muted small">${t('Прототип. Внутри {n} тем — по каждой из 18 тем спецификации ЕНТ по математике есть хотя бы одна, но только на базовом уровне и без чертежей. Прогресс хранится только на этом устройстве.', { n: T.TOPICS.length })}</p>`;
+      <p class="muted small">${t('Прототип. Внутри {n} тем — по каждой из 18 тем спецификации ЕНТ по математике есть хотя бы одна, но только на базовом уровне и без чертежей.', { n: T.TOPICS.length })}</p>`;
+  }
+
+  /* Иллюстрация на лендинге: пробел в корне (Дроби) тянет вверх ошибки в темах, которые на нём стоят. */
+  function heroArt() {
+    const N = [['parab', 330, 34, 'unknown'], ['word', 110, 118, 'risk'], ['quad', 330, 118, 'risk'], ['pct', 70, 206, 'gap'],
+      ['prop', 210, 206, 'gap'], ['lin', 350, 206, 'gap'], ['frac', 210, 292, 'root'], ['arith', 210, 372, 'ok']];
+    const at = {}; N.forEach(([id, x, y]) => { at[id] = [x, y]; });
+    const E = [['arith', 'frac', 'ok'], ['frac', 'pct', 'bad'], ['frac', 'prop', 'bad'], ['frac', 'lin', 'bad'], ['pct', 'word', 'bad'],
+      ['prop', 'word', 'bad'], ['lin', 'word', 'bad'], ['lin', 'quad', 'bad'], ['quad', 'parab', '']];
+    const edge = ([a, b, k], i) => {
+      const [x1, y1] = at[a], [x2, y2] = at[b], ya = y1 - 20, yb = y2 + 20, my = (ya + yb) / 2;
+      return `<path class="h-edge ${k}" style="--d:${i * 0.12}s" d="M${x1},${ya} C${x1},${my} ${x2},${my} ${x2},${yb}"/>`;
+    };
+    return `<svg class="hero-art" viewBox="0 0 440 400" role="img" aria-label="${t('Пробел в дробях тянет за собой ошибки в темах выше')}">
+      ${E.map(edge).join('')}
+      <circle class="h-pulse" cx="210" cy="292" r="34"/>
+      ${N.map(([id, x, y, k], i) => `<g transform="translate(${x - 62},${y - 20})"><g class="h-node ${k}" style="--d:${0.3 + (7 - i) * 0.08}s"><rect width="124" height="40" rx="11"/><text x="62" y="26">${esc(T.TOPIC[id].short)}</text></g></g>`).join('')}
+      <g transform="translate(286,318)"><g class="h-tag"><rect width="128" height="28" rx="14"/><text x="64" y="19">${t('корень пробела')}</text></g></g>
+    </svg>`;
   }
 
   /* ---------- Старт ---------- */
@@ -127,9 +158,9 @@
         <div class="qcard card">
           <div class="qmeta"><span class="chip">${esc(title(cur.topic))}</span><span class="muted">${t('Вопрос {n}', { n: d.log.length + 1 })}</span></div>
           <p class="why">${esc(reasonText(cur.reason))}</p>
-          <h2 class="qtext">${esc(cur.question.text)}</h2>
+          <h2 class="qtext">${math(cur.question.text)}</h2>
           <div class="options">
-            ${cur.options.map((o, i) => `<button class="opt" data-i="${i}"><span class="key">${'АБВГ'[i]}</span>${esc(o.t)}</button>`).join('')}
+            ${cur.options.map((o, i) => `<button class="opt" data-i="${i}"><span class="key">${'АБВГ'[i]}</span><span>${math(o.t)}</span></button>`).join('')}
           </div>
           <div class="row">
             <button class="btn ghost" data-i="skip">${t('Не знаю')}</button>
@@ -166,7 +197,7 @@
   function statsHtml() {
     const c = L.counts(), s = L.streakDays();
     return `<div class="stats">
-      <div><b>${L.readiness()}%</b><span>${t('готовность по карте тем')}</span></div>
+      <div class="ring-stat"><svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle class="ring-bg" cx="18" cy="18" r="15.9"/><circle class="ring-fg" cx="18" cy="18" r="15.9" pathLength="100" style="stroke-dasharray:${L.readiness()} 100"/></svg><span><b>${L.readiness()}%</b><span>${t('готовность по карте тем')}</span></span></div>
       <div><b>${c.done}<small>/${T.TOPICS.length}</small></b><span>${t('тем освоено')}</span></div>
       <div><b>${s}</b><span>${t('{d} подряд', { d: plural(s, 'день', 'дня', 'дней') })}</span></div>
     </div>`;
@@ -203,6 +234,7 @@
       </section>
       ${ui.banner ? `<p class="banner">${ui.banner}</p>` : ''}
       <section class="grid2">
+        <div class="col">
         <div class="card">
           <h2>${t('План на сегодня')} ${tasks.length ? `<span class="muted small">≈ ${total} ${t('мин')}</span>` : ''}</h2>
           ${tasks.length ? `<ol class="tasks">${tasks.map((task, i) => {
@@ -215,15 +247,16 @@
           }).join('')}</ol>`
           : `<p class="muted">${t('Все темы на сегодня закрыты.')} ${nextDue ? t('Следующее повторение — {date}.', { date: fmtDate(nextDue) }) : ''}</p><a class="btn small" href="#map">${t('Открыть карту')}</a>`}
         </div>
+          <div class="card map-card"><h2>${t('Карта знаний')}</h2><div id="home-graph"></div><a class="btn small" href="#map">${t('Открыть карту')}</a></div>
+        </div>
         <div class="col">
           ${open.length ? `<div class="card"><h2>${t('Твой путь: снизу вверх')}</h2><ol class="plan">${open.slice(0, PATH_MAX).map(id => {
             const a = actionFor(id), lock = L.locked(id);
-            return `<li class="${L.topic(id).st}"><span>${esc(title(id))} <small class="muted">${statusLabel(L.topic(id).st).toLowerCase()}</small></span>${lock ? `<span class="muted small">${t('после предыдущих')}</span>` : `<a class="btn small" href="${a.href}">${a.label}</a>`}</li>`;
+            return `<li class="${L.topic(id).st}"><span>${esc(title(id))} <small class="muted">${statusLabel(L.topic(id).st).toLowerCase()}</small></span>${lock ? `<span class="lock" title="${t('после предыдущих')}" aria-label="${t('после предыдущих')}"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg></span>` : `<a class="btn small" href="${a.href}">${a.label}</a>`}</li>`;
           }).join('')}</ol>
             ${more > 0 ? `<p class="muted small">${t('И ещё {n} {themes} выше — они откроются по мере продвижения.', { n: more, themes: themes(more) })}</p>` : ''}
             ${risk ? `<p class="muted small">${t('{n} {themes} над пробелами ещё не {checked} — дойдём до них, когда основа будет готова.', { n: risk, themes: themes(risk), checked: plural(risk, 'проверялась', 'проверялись', 'проверялись') })}</p>` : ''}</div>` : ''}
           ${traces.length ? `<div class="card"><h2>${t('Откуда растут ошибки')}</h2><ul class="traces">${traces.map(x => `<li><span class="root">${esc(title(x.root))}</span><span class="arrow">${t('держит:')}</span><span>${x.above.map(id => esc(T.TOPIC[id].short)).join(', ')}</span></li>`).join('')}</ul></div>` : ''}
-          <div class="card"><h2>${t('Карта знаний')}</h2><div id="home-graph"></div><a class="btn small" href="#map">${t('Открыть карту')}</a></div>
         </div>
       </section>`;
     ui.banner = null;
@@ -246,15 +279,15 @@
         <p class="eyebrow">${t('Урок · шаг {a} из {b}', { a: Math.min(shown, les.steps.length), b: les.steps.length })}</p>
         <h1>${esc(tp.title)}</h1>
         ${why ? `<p class="muted">${why}</p>` : ''}
-        <div class="rule"><h3>${t('Правило')}</h3><p>${esc(tp.rule)}</p></div>
+        <div class="rule"><h3>${t('Правило')}</h3><p>${math(tp.rule)}</p></div>
         <div class="worked">
           <h3>${t('Разбор по шагам')}</h3>
-          <p class="task">${esc(les.task)}</p>
-          <ol class="steps">${les.steps.slice(0, shown).map(([say, math]) => `<li><span class="say">${esc(say)}</span><span class="mono">${esc(math)}</span></li>`).join('')}</ol>
-          ${done ? `<p class="takeaway">${esc(les.takeaway)}</p>` : `<p class="muted small">${t('Сначала подумай, что сделаешь дальше, — потом открой шаг.')}</p><button class="btn" id="more">${t('Следующий шаг')}</button>`}
+          <p class="task">${math(les.task)}</p>
+          <ol class="steps">${les.steps.slice(0, shown).map(([say, m]) => `<li><span class="say">${math(say)}</span><span class="m">${math(m)}</span></li>`).join('')}</ol>
+          ${done ? `<p class="takeaway">${math(les.takeaway)}</p>` : `<p class="muted small">${t('Сначала подумай, что сделаешь дальше, — потом открой шаг.')}</p><button class="btn" id="more">${t('Следующий шаг')}</button>`}
         </div>
         ${done ? `
-          <div class="traps"><h3>${mine.length ? t('Твои ошибки в этой теме') : t('Частые ловушки')}</h3><ul>${traps.map(m => `<li><b>${esc(m.title)}.</b> ${esc(m.fix)}</li>`).join('')}</ul></div>
+          <div class="traps"><h3>${mine.length ? t('Твои ошибки в этой теме') : t('Частые ловушки')}</h3><ul>${traps.map(m => `<li><b>${esc(m.title)}.</b> ${math(m.fix)}</li>`).join('')}</ul></div>
           <button class="btn primary" id="go">${t('Теперь ты: практика')}</button>` : ''}
         <a class="btn ghost" href="#home">${t('На главную')}</a>
       </section>`;
@@ -289,9 +322,9 @@
     const progress = practice ? pips(s.mastered ? L.NEED : L.topic(s.topic).streak)
       : `<span class="muted">${t('Вопрос {a} из {b}', { a: Math.min(s.n + (a ? 0 : 1), L.CHECK_SIZE), b: L.CHECK_SIZE })}</span>`;
     const hints = [];
-    if (s.hints >= 1) hints.push(`<p><b>${t('Правило.')}</b> ${esc(tp.rule)}</p>`);
-    if (s.hints >= 2 && sol.length) hints.push(`<p><b>${t('Первый шаг.')}</b> ${esc(sol[0])}</p>`);
-    if (s.hints >= 3 && sol.length > 1) hints.push(`<p><b>${t('Дальше.')}</b></p><ol class="steps">${sol.slice(1).map(x => `<li><span class="mono">${esc(x)}</span></li>`).join('')}</ol>`);
+    if (s.hints >= 1) hints.push(`<p><b>${t('Правило.')}</b> ${math(tp.rule)}</p>`);
+    if (s.hints >= 2 && sol.length) hints.push(`<p><b>${t('Первый шаг.')}</b> ${math(sol[0])}</p>`);
+    if (s.hints >= 3 && sol.length > 1) hints.push(`<p><b>${t('Дальше.')}</b></p><ol class="steps">${sol.slice(1).map(x => `<li><span class="m">${math(x)}</span></li>`).join('')}</ol>`);
     const hintLabel = [t('Подсказка'), t('Ещё подсказка'), t('Показать решение'), t('Подсказки кончились')][s.hints];
 
     let feedback = '';
@@ -301,10 +334,10 @@
       const nextLabel = last ? (practice ? t('Завершить тему') : t('Итог')) : (practice ? t('Следующая задача') : t('Следующий вопрос'));
       feedback = `<div class="feedback ${a.ok ? 'good' : 'bad'}">
         ${a.ok ? `<p class="ok-msg">${t('Верно!')}${practice && s.hints >= 2 ? ` <span class="muted small">${t('С подсказкой — в серию не идёт. Следующую попробуй без неё.')}</span>` : ''}</p>`
-          : `<p class="bad-msg">${a.opt ? t('Неверно.') : t('Ничего страшного.')} ${t('Правильный ответ: <b>{a}</b>.', { a: esc(s.opts.find(o => o.ok).t) })}</p>`}
-        ${m ? `<p><b>${t('Похоже на типичную ошибку:')}</b> ${esc(m.title[0].toLowerCase() + m.title.slice(1))}. ${esc(m.fix)}</p>` : ''}
+          : `<p class="bad-msg">${a.opt ? t('Неверно.') : t('Ничего страшного.')} ${t('Правильный ответ: <b>{a}</b>.', { a: math(s.opts.find(o => o.ok).t) })}</p>`}
+        ${m ? `<p><b>${t('Похоже на типичную ошибку:')}</b> ${esc(m.title[0].toLowerCase() + m.title.slice(1))}. ${math(m.fix)}</p>` : ''}
         ${s.flagged ? `<p class="note">${t('Эта ошибка родом из темы «{topic}» — она поставлена на проверку сегодня.', { topic: esc(title(s.flagged)) })}</p>` : ''}
-        ${sol.length ? `<h3>${t('Разбор')}</h3><ol class="steps">${sol.map(x => `<li><span class="mono">${esc(x)}</span></li>`).join('')}</ol>` : ''}
+        ${sol.length ? `<h3>${t('Разбор')}</h3><ol class="steps">${sol.map(x => `<li><span class="m">${math(x)}</span></li>`).join('')}</ol>` : ''}
         <div class="row">
           <button class="btn primary" id="next">${nextLabel}</button>
           ${practice && s.wrongRow >= 2 ? `<a class="btn" href="#lesson/${s.topic}">${t('Вернуться к уроку')}</a>` : ''}
@@ -316,8 +349,8 @@
       <section class="card narrow session">
         <div class="qmeta"><span class="chip">${esc(tp.title)}</span>${progress}</div>
         <p class="why">${practice ? t('Практика: {n} верных подряд без подсказок — и тема освоена', { n: L.NEED }) : t('Проверка без подсказок: два вопроса')}</p>
-        <h2 class="qtext">${esc(s.q.text)}</h2>
-        <div class="options">${s.opts.map((o, i) => `<button class="opt ${a && o.ok ? 'is-ok' : ''} ${a && a.idx === i && !o.ok ? 'is-bad' : ''}" data-i="${i}" ${a ? 'disabled' : ''}><span class="key">${'АБВГ'[i]}</span>${esc(o.t)}</button>`).join('')}</div>
+        <h2 class="qtext">${math(s.q.text)}</h2>
+        <div class="options">${s.opts.map((o, i) => `<button class="opt ${a && o.ok ? 'is-ok' : ''} ${a && a.idx === i && !o.ok ? 'is-bad' : ''}" data-i="${i}" ${a ? 'disabled' : ''}><span class="key">${'АБВГ'[i]}</span><span>${math(o.t)}</span></button>`).join('')}</div>
         ${a ? '' : `<div class="row">
           ${practice ? `<button class="btn small" id="hint" ${s.hints >= 3 ? 'disabled' : ''}>${hintLabel}</button>` : ''}
           <button class="btn ghost small" id="skip">${t('Не знаю')}</button>
@@ -368,14 +401,34 @@
         : t('Верно {a} из {b}. Это нормально: лучше узнать сейчас, чем на экзамене. Тема добавлена в план.', { a: s.right, b: L.CHECK_SIZE });
     }
     const next = L.today()[0];
+    const win = s.mode === 'practice' || L.topic(id).st === 'mastered' || L.topic(id).st === 'solid';
+    const above = T.TOPICS.filter(x => x.prereq.includes(id)).map(x => esc(x.short));
     app.innerHTML = `
-      <section class="card narrow center">
+      <section class="card narrow center finish ${win ? 'win' : ''}">
+        ${win ? `<div class="medal" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>` : ''}
         <p class="eyebrow">${esc(title(id))}</p>
         <h1>${head}</h1>
         <p class="lead">${text}</p>
+        ${win && above.length ? `<p class="unlocks"><span class="muted small">${t('Эта тема — опора для:')}</span> ${above.map(x => `<span class="chip">${x}</span>`).join(' ')}</p>` : ''}
         ${next ? `<a class="btn primary" href="#${next.kind}/${next.topic}">${t('Дальше: {label} · {topic}', { label: taskText(next)[0].toLowerCase(), topic: esc(title(next.topic)) })}</a>` : `<p>${t('На сегодня план выполнен.')}</p>`}
         <a class="btn ghost" href="#home">${t('На главную')}</a>
       </section>`;
+    if (win) confetti();
+  }
+
+  /* Короткий салют при освоении темы. Без анимаций, если человек их отключил в системе. */
+  function confetti() {
+    if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const box = document.createElement('div');
+    box.className = 'confetti'; box.setAttribute('aria-hidden', 'true');
+    const colors = ['var(--accent)', 'var(--ok)', 'var(--risk)', 'var(--learn)', 'var(--gap)'];
+    for (let i = 0; i < 70; i++) {
+      const p = document.createElement('i');
+      p.style.cssText = `left:${50 + (Math.random() - 0.5) * 30}%;background:${colors[i % colors.length]};--x:${(Math.random() - 0.5) * 760}px;--y:${-260 - Math.random() * 300}px;--r:${Math.random() * 720 - 360}deg;animation-delay:${Math.random() * 0.15}s`;
+      box.appendChild(p);
+    }
+    document.body.appendChild(box);
+    setTimeout(() => box.remove(), 2200);
   }
 
   /* ---------- Карта ---------- */
@@ -686,7 +739,8 @@
   /* ---------- Шапка: навигация и переключатель языка ---------- */
   function chrome() {
     const nav = { home: t('Сегодня'), map: t('Карта'), progress: t('Прогресс'), teacher: t('Учителю') };
-    document.querySelectorAll('[data-nav]').forEach(a => { a.textContent = nav[a.dataset.nav]; });
+    document.querySelectorAll('[data-nav]').forEach(a => { a.querySelector('span').textContent = nav[a.dataset.nav]; });
+    document.querySelector('.tabs').setAttribute('aria-label', t('Разделы'));
     document.title = t('Tamyr — подготовка к ЕНТ от корня');
     const btn = document.getElementById('lang');
     const other = T.lang === 'kk' ? 'ru' : 'kk';

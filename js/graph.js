@@ -218,6 +218,17 @@
 
     container.innerHTML = '';
     container.appendChild(svg);
+
+    // На телефоне карта шире экрана: прокручиваем к теме, с которой всё начинается, а края гаснут — видно, что карту можно листать.
+    requestAnimationFrame(() => {
+      const over = container.scrollWidth - container.clientWidth;
+      container.classList.toggle('scrolls', over > 4);
+      if (over <= 4) return;
+      const open = T.TOPICS.find(t => OPEN.has(status[t.id]));
+      const id = opts.current || [...roots][0] || (open && open.id);
+      const k = svg.getBoundingClientRect().width / W;
+      container.scrollLeft = id ? Math.max(0, Math.min(over, POS[id].x * k - container.clientWidth / 2)) : over / 2;
+    });
   };
 
   T.LEGEND = [
