@@ -173,12 +173,21 @@
         </aside>
       </section>`;
     T.renderGraph(app.querySelector('#mini-graph'), status, { current: cur.topic });
+    const shown = Date.now();
     app.querySelectorAll('[data-i]').forEach(b => b.addEventListener('click', () => {
+      const opt = b.dataset.i === 'skip' ? null : cur.options[Number(b.dataset.i)];
+      logAnswer('diag', cur.topic, cur.question, opt, 0, shown);
       d.answer(b.dataset.i === 'skip' ? null : Number(b.dataset.i));
       viewQuiz();
     }));
     const stop = app.querySelector('#stop');
     if (stop) stop.addEventListener('click', finishDiagnostic);
+  }
+
+  /* Один ответ — в журнал (только у вошедших). choice — номер варианта в банке, а не на экране: так ответы сравнимы между учениками. */
+  function logAnswer(mode, topic, q, opt, hints, shown) {
+    A.logAnswer({ mode, topic, question: q.gen ? 'gen:' + topic : q.id, choice: opt ? q.options.indexOf(opt) : null,
+      correct: !!(opt && opt.ok), mis: opt && opt.mis ? opt.mis : null, hints, ms: Math.min(3600000, Date.now() - shown) });
   }
 
   function finishDiagnostic() {
@@ -301,7 +310,7 @@
   function newQuestion(s) {
     s.q = T.nextQuestion(s.topic, L.topic(s.topic).seen);
     s.opts = T.shuffle(s.q.options, Math.random);
-    s.hints = 0; s.answered = null; s.flagged = null;
+    s.hints = 0; s.answered = null; s.flagged = null; s.ai = null; s.shown = Date.now();
   }
 
   function viewSession(mode, id) {
@@ -337,6 +346,7 @@
           : `<p class="bad-msg">${a.opt ? t('Неверно.') : t('Ничего страшного.')} ${t('Правильный ответ: <b>{a}</b>.', { a: math(s.opts.find(o => o.ok).t) })}</p>`}
         ${m ? `<p><b>${t('Похоже на типичную ошибку:')}</b> ${esc(m.title[0].toLowerCase() + m.title.slice(1))}. ${math(m.fix)}</p>` : ''}
         ${s.flagged ? `<p class="note">${t('Эта ошибка родом из темы «{topic}» — она поставлена на проверку сегодня.', { topic: esc(title(s.flagged)) })}</p>` : ''}
+        ${a.ok ? '' : aiBox(s)}
         ${sol.length ? `<h3>${t('Разбор')}</h3><ol class="steps">${sol.map(x => `<li><span class="m">${math(x)}</span></li>`).join('')}</ol>` : ''}
         <div class="row">
           <button class="btn primary" id="next">${nextLabel}</button>
@@ -364,6 +374,7 @@
       const opt = idx === null ? null : s.opts[idx];
       const ok = !!(opt && opt.ok);
       s.answered = { idx, ok, opt };
+      logAnswer(s.mode, s.topic, s.q, opt, s.hints, s.shown);
       s.n++;
       if (ok) s.right++;
       s.flagged = L.recordAnswer(s.topic, s.q, ok ? null : opt);
@@ -379,6 +390,8 @@
       const hint = app.querySelector('#hint');
       if (hint) hint.addEventListener('click', () => { s.hints++; renderSession(); });
     } else {
+      const ask = app.querySelector('#ai-ask');
+      if (ask) ask.addEventListener('click', () => explainMistake(s, tp, sol));
       app.querySelector('#next').addEventListener('click', () => {
         if (practice ? s.mastered : s.n >= L.CHECK_SIZE) return finishSession();
         newQuestion(s);
@@ -387,13 +400,51 @@
     }
   }
 
+  /* «Объясни мою ошибку»: ИИ (Claude) объясняет именно выбранный неверный ответ. Только для вошедших — на сервере лимит в день. */
+  function aiBox(s) {
+    if (!A.enabled || !T.CONFIG.ai) return '';
+    if (!A.user()) return `<p class="muted small">${t('<a href="#account">Войди</a>, и ИИ объяснит именно твою ошибку.')}</p>`;
+    const ai = s.ai;
+    if (ai && ai.text) {
+      return `<div class="ai-box"><p class="ai-head"><span class="ai-spark" aria-hidden="true">✦</span> ${t('Объяснение Tamyr AI')}</p>
+        ${ai.text.split(/\n+/).map(p => `<p>${math(p)}</p>`).join('')}
+        <p class="muted tiny">${t('Объяснение написал ИИ — он может ошибаться. Правильный ответ и разбор ниже проверены.')}</p></div>`;
+    }
+    if (ai === 'loading') return `<div class="ai-box loading" role="status"><span class="ai-dots" aria-hidden="true"><i></i><i></i><i></i></span> ${t('Tamyr AI разбирает твой ответ…')}</div>`;
+    const err = ai && ai.error ? `<p class="bad-msg small" role="alert">${esc(ai.error)}</p>` : '';
+    if (ai && ai.limit) return err;
+    return `${err}<button class="btn ai-btn" id="ai-ask"><span class="ai-spark" aria-hidden="true">✦</span> ${ai && ai.error ? t('Попробовать ещё раз') : t('Объясни мою ошибку')}</button>`;
+  }
+
+  async function explainMistake(s, tp, sol) {
+    const a = s.answered, m = a.opt && a.opt.mis ? T.MISCONCEPTIONS[a.opt.mis] : null, q = s.q;
+    s.ai = 'loading'; renderSession();
+    let result;
+    try {
+      result = { text: await A.explain({
+        lang: T.lang, topic: tp.title, rule: tp.rule, question: q.text, options: s.opts.map(o => o.t),
+        correct: s.opts.find(o => o.ok).t, chosen: a.opt ? a.opt.t : null,
+        mistake: m ? { title: m.title, fix: m.fix } : null, solution: sol
+      }) };
+    } catch (e) {
+      result = e.status === 429 ? { limit: true, error: t('На сегодня объяснения ИИ закончились — завтра будут новые. Разбор ниже всегда доступен.') }
+        : e.kind === 'network' ? { error: t('Нет связи с сервером. Проверь интернет и попробуй ещё раз.') }
+        : e.kind === 'auth' ? { error: t('Нужно войти заново, чтобы получить объяснение.') }
+        : { error: t('Не получилось получить объяснение. Попробуй ещё раз чуть позже.') };
+    }
+    if (ui.session !== s || s.q !== q) return; // ученик уже ушёл к другой задаче
+    s.ai = result;
+    renderSession();
+  }
+
   function finishSession() {
     const s = ui.session, id = s.topic;
     s.done = true;
     let head, text;
     if (s.mode === 'practice') {
       head = t('Тема освоена ✓');
-      text = t('{n} задачи подряд без подсказок. Тема вернётся на повторение завтра — так она останется в памяти до экзамена.', { n: L.NEED });
+      const x = L.topic(id); // когда повторять, решила модель забывания: после ошибок — завтра, без ошибок — позже
+      text = t('{n} задачи подряд без подсказок. Повторим тему {when} — так она останется в памяти до экзамена.', { n: L.NEED, when: x.ivl <= 1 ? t('завтра') : fmtDate(x.due) });
     } else {
       const pass = L.checkResult(id, s.right), x = L.topic(id);
       head = pass ? (x.st === 'solid' ? t('Закреплено ✓') : t('Подтверждено ✓')) : t('Тема вернулась в работу');
@@ -478,6 +529,7 @@
     const S = L.get();
     const mis = Object.entries(S.mis).sort((a, b) => b[1] - a[1]).slice(0, 5);
     const log = S.log.slice(-12).reverse();
+    const mem = L.memory();
     app.innerHTML = `
       <section class="result-head">
         <div><p class="eyebrow">${t('Прогресс')}</p><h1>${esc(S.name)}</h1>
@@ -491,6 +543,9 @@
           ${mis.length ? `<ul class="mis">${mis.map(([id, n]) => { const m = T.MISCONCEPTIONS[id]; return `<li><b>${esc(m.title)}</b>${n > 1 ? ` <span class="chip small">×${n}</span>` : ''}<span class="fix">${esc(m.fix)} · ${t('тема «{topic}»', { topic: esc(title(m.home)) })}</span></li>`; }).join('')}</ul>` : `<p class="muted">${t('Пока не замечено ни одной типичной ошибки.')}</p>`}
         </div>
         <div class="col">
+          ${mem.length ? `<div class="card"><h2>${t('Память по темам')}</h2>
+            <p class="muted small">${t('Насколько вероятно, что ты вспомнишь тему сегодня. Модель забывания (FSRS) ставит повторение на день, когда вероятность падает до 90%.')}</p>
+            <ul class="memory">${mem.slice(0, 6).map(x => { const pc = Math.round(100 * x.recall); return `<li><span>${esc(title(x.id))}</span><span class="mbar"><i style="width:${pc}%" class="${pc < 90 ? 'low' : ''}"></i></span><b>${pc}%</b><span class="muted small">${x.due <= L.now() ? t('пора повторить') : t('повтор {date}', { date: fmtDate(x.due) })}</span></li>`; }).join('')}</ul></div>` : ''}
           <div class="card">
             <h2>${t('История')}</h2>
             ${log.length ? `<ul class="log">${log.map(e => `<li class="e-${e.kind}"><span class="muted small">${fmtDate(e.t)}</span><span><b>${esc(title(e.topic))}</b> — ${esc(logText(e))}</span></li>`).join('')}</ul>` : `<p class="muted">${t('Здесь появятся пройденные уроки и освоенные темы.')}</p>`}
@@ -614,6 +669,8 @@
           <button class="btn small" id="out">${t('Выйти')}</button>
         </div>
         ${own ? `<p class="muted small">${t('При выходе прогресс остаётся в аккаунте, а с этого устройства убирается.')}</p>` : ''}
+        <p class="muted small">${t('Твои ответы на задачи сохраняются без имени и почты — по ним Tamyr учится точнее подбирать повторения.')}
+          <button class="link small" id="del-answers">${ui.delAnswers === 'done' ? t('Ответы удалены') : ui.delAnswers === 'ask' ? t('Точно удалить все мои ответы?') : t('Удалить мои ответы')}</button></p>
         <a class="btn ghost" href="#home">${t('На главную')}</a>
       </section>`;
     app.querySelectorAll('[data-keep]').forEach(b => b.addEventListener('click', async () => {
@@ -623,6 +680,12 @@
     const sync = app.querySelector('#sync');
     if (sync) sync.addEventListener('click', () => A.sync().then(r => { if (r === 'pull') route(); }));
     app.querySelector('#out').addEventListener('click', signOut);
+    app.querySelector('#del-answers').addEventListener('click', async () => {
+      if (ui.delAnswers === 'done') return;
+      if (ui.delAnswers !== 'ask') { ui.delAnswers = 'ask'; return viewAccount(); }
+      try { await A.deleteAnswers(); ui.delAnswers = 'done'; } catch (e) { ui.delAnswers = null; ui.auth.note = t('Не получилось удалить ответы. Попробуй ещё раз позже.'); }
+      viewAccount();
+    });
   }
 
   function viewAuthForm() {

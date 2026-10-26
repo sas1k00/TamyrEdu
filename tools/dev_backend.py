@@ -24,6 +24,9 @@ USERS = {}      # email -> {id, email, salt, hash, name, confirmed}
 ACCESS = {}     # access_token -> (user_id, expires)
 REFRESH = {}    # refresh_token -> user_id
 PROGRESS = {}   # user_id -> {user_id, state, updated_at}
+AI_USED = {}    # (user_id, день) -> сколько объяснений ИИ запрошено
+ANSWERS = []    # журнал ответов: как public.answers, но в памяти
+AI_LIMIT = 20
 VERIFY = {}     # одноразовый токен из письма -> (user_id, kind, redirect)
 
 
@@ -172,7 +175,7 @@ class Handler(BaseHTTPRequestHandler):
 
         # всё, что ниже, — только для вошедших
         user = self.user()
-        if path.startswith('/auth/v1/') or path.startswith('/rest/v1/'):
+        if path.startswith('/auth/v1/') or path.startswith('/rest/v1/') or path.startswith('/functions/v1/'):
             if not user:
                 return self.send(401, {'code': 401, 'error_code': 'bad_jwt', 'msg': 'invalid JWT'})
 
@@ -210,6 +213,35 @@ class Handler(BaseHTTPRequestHandler):
                 if wanted == user['id']:
                     PROGRESS.pop(user['id'], None)
                 return self.send(204)
+
+        if path == '/rest/v1/answers':
+            if method == 'POST':
+                rows = self.body()
+                if not isinstance(rows, list) or any(not isinstance(r, dict) or r.get('mode') not in ('diag', 'practice', 'check') for r in rows):
+                    return self.send(400, {'code': '23514', 'message': 'new row violates check constraint'})
+                ANSWERS.extend(dict(r, user_id=user['id']) for r in rows)
+                print('[answers] +%d (всего %d)' % (len(rows), len(ANSWERS)), flush=True)
+                return self.send(201)
+            if method == 'GET':   # как RLS: только свои
+                return self.send(200, [r for r in ANSWERS if r['user_id'] == user['id']])
+            if method == 'DELETE':
+                ANSWERS[:] = [r for r in ANSWERS if r['user_id'] != user['id']]
+                return self.send(204)
+
+        if path == '/functions/v1/explain' and method == 'POST':
+            # Заглушка supabase/functions/explain: тот же вход и лимит, но вместо Claude — готовый текст.
+            b = self.body()
+            if not b.get('question') or not b.get('correct'):
+                return self.send(400, {'error': 'bad'})
+            key = (user['id'], time.strftime('%Y-%m-%d'))
+            AI_USED[key] = AI_USED.get(key, 0) + 1
+            if AI_USED[key] > AI_LIMIT:
+                return self.send(429, {'error': 'limit'})
+            time.sleep(0.6)
+            chosen = b.get('chosen') or 'не знаю'
+            return self.send(200, {'text': 'Похоже, ты выбрал %s, потому что сложил числители и знаменатели отдельно.\n'
+                                           'Складывать можно только доли одного размера: 1/6 = 5/30, 1/5 = 6/30, '
+                                           'поэтому 5/30 + 6/30 = 11/30. Правильный ответ: %s.' % (chosen, b['correct'])})
 
         self.send(404, {'message': 'not found'})
 

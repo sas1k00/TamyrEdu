@@ -70,7 +70,7 @@
     if (opts.auth) headers.Authorization = 'Bearer ' + session.access_token;
     // На плохой связи запрос может висеть минутами — обрываем сами и считаем, что сети нет.
     const ctl = new AbortController();
-    const timeout = setTimeout(() => ctl.abort(), 12000);
+    const timeout = setTimeout(() => ctl.abort(), opts.timeout || 12000);
     let res;
     try {
       res = await fetch(base + path, { method: opts.method || 'GET', headers, body: opts.body ? JSON.stringify(opts.body) : undefined, signal: ctl.signal });
@@ -214,6 +214,7 @@
         L.setOwner(uid);
         if (action === 'push') await push(L.get());
         setStatus('ok');
+        flushAnswers();
         return action;
       } catch (e) {
         setStatus(e.kind === 'network' ? 'offline' : 'error');
@@ -226,9 +227,57 @@
       return mine() ? pushNow() : true;
     },
     async clearRemote() { if (enabled && session) await authed(rowUrl(), { method: 'DELETE' }); },
+    /* Объяснение ошибки от ИИ (supabase/functions/explain). Ответ модели ждём дольше обычного запроса. */
+    // Без authed(): если функция ответит 401 (например, неверно настроена), ученика не выкидываем из аккаунта.
+    async explain(task) { await fresh(); return (await call('/functions/v1/explain', { method: 'POST', auth: true, body: task, timeout: 40000 })).text; },
+
+    /* Журнал ответов для будущих моделей (supabase/answers.sql). Пишется только у вошедших: при регистрации они дали согласие.
+       Ответы копятся на устройстве и уходят пачками — без сети ничего не теряется. */
+    logAnswer(rec) {
+      if (!enabled || !session) return;
+      queue.push(Object.assign({ uid: session.user.id, at: new Date().toISOString(), lang: T.lang }, rec));
+      if (queue.length > QUEUE_MAX) queue.splice(0, queue.length - QUEUE_MAX);
+      saveQueue();
+      clearTimeout(logTimer);
+      logTimer = setTimeout(flushAnswers, queue.length >= 10 ? 0 : 4000);
+    },
+    flushAnswers: () => flushAnswers(),
+    /* Удалить свои ответы из облака и с устройства. */
+    async deleteAnswers() {
+      queue = queue.filter(r => !session || r.uid !== session.user.id); saveQueue();
+      await authed('/rest/v1/answers?user_id=eq.' + encodeURIComponent(session.user.id), { method: 'DELETE' });
+    },
 
     _decide: decide, _claims: claims, _fromTokens: fromTokens, _kindOf: kindOf
   };
+
+  const QKEY = 'tamyr.answers', QUEUE_MAX = 500;
+  let queue = [], logTimer = null, logOff = false, flushing = false;
+  try { queue = JSON.parse(localStorage.getItem(QKEY) || '[]'); if (!Array.isArray(queue)) queue = []; } catch (e) { queue = []; }
+  function saveQueue() { try { localStorage.setItem(QKEY, JSON.stringify(queue)); } catch (e) { /* нет хранилища — очередь живёт в памяти */ } }
+  async function flushAnswers() {
+    if (!enabled || !session || logOff || flushing) return;
+    const uid = session.user.id;
+    const batch = queue.filter(r => r.uid === uid).slice(0, 50);
+    if (!batch.length) return;
+    flushing = true;
+    try {
+      await authed('/rest/v1/answers', { method: 'POST', headers: { Prefer: 'return=minimal' },
+        body: batch.map(({ uid: _, ...r }) => r) });
+      const sent = new Set(batch);
+      queue = queue.filter(r => !sent.has(r)); saveQueue();
+      if (queue.some(r => r.uid === uid)) setTimeout(flushAnswers, 0);
+    } catch (e) {
+      // нет таблицы (supabase/answers.sql ещё не выполнен) — не долбим сервер до перезагрузки, ответы ждут на устройстве
+      if (e.status === 404) logOff = true;
+      // сервер отверг сами записи (не прошли проверки таблицы) — выбрасываем пачку, иначе она застрянет навсегда
+      else if (e.status === 400 || e.status === 409 || e.status === 422) { const bad = new Set(batch); queue = queue.filter(r => !bad.has(r)); saveQueue(); }
+    } finally { flushing = false; }
+  }
+  if (enabled) {
+    window.addEventListener('online', () => flushAnswers());
+    document.addEventListener('visibilitychange', () => { if (document.hidden) flushAnswers(); });
+  }
 
   // Каждое сохранение прогресса уходит в облако с небольшой задержкой — чтобы не слать запрос на каждый ответ.
   if (enabled && T.learner) {
