@@ -462,6 +462,16 @@ sup { font-size: .7em; }
   100% { opacity: 0; transform: translate(var(--x), calc(var(--y) + 420px)) rotate(var(--r)); }
 }
 
+/* Память по темам (FSRS) */
+.memory { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.memory li { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(60px, 1fr) 44px; gap: 4px 10px; align-items: center; font-size: .92rem; }
+.memory li > .small { grid-column: 1 / -1; margin-top: -4px; }
+.mbar { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.mbar i { display: block; height: 100%; background: var(--ok); border-radius: 4px; }
+.mbar i.low { background: var(--risk); }
+.memory b { text-align: right; font-variant-numeric: tabular-nums; }
+.link.small { font-size: .85rem; }
+
 /* ИИ-объяснение */
 .ai-btn { margin: 4px 0 14px; border-color: color-mix(in srgb, var(--learn) 45%, var(--line)); color: var(--learn); background: var(--learn-soft); }
 .ai-btn:hover { border-color: var(--learn); }

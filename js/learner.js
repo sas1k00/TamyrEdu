@@ -33,7 +33,7 @@
 
   function blank(name) {
     const topics = {};
-    T.TOPICS.forEach(t => { topics[t.id] = { st: 'unknown', streak: 0, seen: [], lesson: false, due: null, ivl: 0 }; });
+    T.TOPICS.forEach(t => { topics[t.id] = { st: 'unknown', streak: 0, seen: [], lesson: false, due: null, ivl: 0, fs: null, miss: 0 }; });
     return { v: 1, name: name || 'Ученик', created: Date.now(), offset: 0, topics, mis: {}, log: [], days: [], diag: null, owner, updated: 0, demo: false };
   }
 
@@ -51,6 +51,10 @@
       b.lesson = x.lesson === true;
       b.due = Number.isFinite(x.due) ? x.due : null;
       b.ivl = Number.isFinite(x.ivl) ? x.ivl : 0;
+      b.fs = T.fsrs.sanitize(x.fs);
+      // прогресс до FSRS: память со стабильностью, равной прежнему интервалу, — иначе закреплённая тема откатилась бы
+      if (!b.fs && b.ivl > 0 && Number.isFinite(b.due) && OK.has(b.st)) b.fs = { s: b.ivl, d: 5, last: b.due - b.ivl * DAY };
+      b.miss = Number.isFinite(x.miss) ? x.miss : 0;
     });
     base.created = Number.isFinite(s.created) ? s.created : base.created;
     base.offset = Number.isFinite(s.offset) ? s.offset : 0;
@@ -75,6 +79,12 @@
   function logEvent(kind, topic) { S.log.push({ t: now(), kind, topic }); if (S.log.length > 60) S.log.shift(); }
 
   const tp = id => S.topics[id];
+  /* Повторение темы с оценкой g (1–4) по модели забывания FSRS: она решает, через сколько дней тема вернётся. */
+  function schedule(x, g) {
+    x.fs = T.fsrs.review(x.fs, g, now());
+    x.ivl = T.fsrs.interval(x.fs);
+    x.due = now() + x.ivl * DAY;
+  }
   const hasOpenBelow = id => [...T.ancestors(id)].some(a => OPEN.has(tp(a).st));
 
   const L = {
@@ -91,7 +101,7 @@
       S.demo = demo === true;
       T.TOPICS.forEach(t => {
         const st = res.status[t.id], x = tp(t.id);
-        if (st === 'mastered') { x.st = 'mastered'; x.ivl = 3; x.due = now() + 3 * DAY; }
+        if (st === 'mastered') { x.st = 'mastered'; schedule(x, T.fsrs.GOOD); }
         else if (st === 'inferred') x.st = 'inferred';
         else if (st === 'gap') x.st = 'gap';
       });
@@ -176,15 +186,17 @@
     /* Ответ в практике. clean — без сильных подсказок. Возвращает true, когда тема освоена. */
     practiceAnswer(id, correct, clean) {
       const x = tp(id);
-      if (!correct) x.streak = 0;
+      if (!correct) { x.streak = 0; x.miss++; }
       else if (clean) x.streak++;
       if (x.streak >= NEED) {
         x.streak = 0;
         // уже освоенную тему дополнительная практика не откатывает к короткому интервалу
         if (x.st !== 'mastered' && x.st !== 'solid') {
-          x.st = 'mastered'; x.ivl = 1; x.due = now() + DAY;
+          // без ошибок по пути — «хорошо», с ошибками — «с трудом»: такая тема вернётся раньше
+          x.st = 'mastered'; schedule(x, x.miss ? T.fsrs.HARD : T.fsrs.GOOD);
           logEvent('mastered', id);
         }
+        x.miss = 0;
         save();
         return true;
       }
@@ -196,13 +208,13 @@
     checkResult(id, right) {
       const x = tp(id), pass = right >= CHECK_SIZE;
       if (pass) {
-        x.ivl = x.st === 'mastered' || x.st === 'solid' ? Math.max(3, x.ivl * 3) : 3;
+        schedule(x, T.fsrs.GOOD);
         x.st = x.ivl >= 9 ? 'solid' : 'mastered';
-        x.due = now() + x.ivl * DAY;
         logEvent(x.st === 'solid' ? 'solid' : 'review', id);
       } else {
+        x.fs = T.fsrs.review(x.fs, T.fsrs.AGAIN, now()); // забывание тоже учит модель: после освоения тема вернётся раньше
         x.st = x.lesson ? 'learning' : 'gap';
-        x.due = null; x.ivl = 0; x.streak = 0;
+        x.due = null; x.ivl = 0; x.streak = 0; x.miss = 0;
         logEvent('lapse', id);
       }
       touchDay(); save();
@@ -229,6 +241,13 @@
       if (!set.has(dayKey(ts))) ts -= DAY;
       while (set.has(dayKey(ts))) { n++; ts -= DAY; }
       return n;
+    },
+    /* Память по темам: вероятность вспомнить сейчас (FSRS) и дата повторения. Сначала то, что забывается сильнее. */
+    memory() {
+      return T.TOPICS.map(t => ({ id: t.id, x: tp(t.id) }))
+        .filter(({ x }) => x.fs && x.due !== null && !OPEN.has(x.st))
+        .map(({ id, x }) => ({ id, recall: T.fsrs.retrievability(x.fs, now()), due: x.due }))
+        .sort((a, b) => a.recall - b.recall);
     },
     nextDue() {
       const ds = T.TOPICS.map(t => tp(t.id)).filter(x => x.due !== null && !OPEN.has(x.st)).map(x => x.due);

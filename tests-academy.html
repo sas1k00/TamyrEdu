@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tamyr Academy — тесты</title>
-  <link rel="stylesheet" href="css/style.css?v=21">
+  <link rel="stylesheet" href="css/style.css?v=22">
 </head>
 <body>
   <main>
@@ -15,19 +15,20 @@
       <ul class="tests" id="tests"></ul>
     </section>
   </main>
-  <script src="js/data.js?v=21"></script>
-  <script src="js/data-ent.js?v=21"></script>
+  <script src="js/data.js?v=22"></script>
+  <script src="js/data-ent.js?v=22"></script>
   <script>window.Tamyr.LEARNER_KEY = 'tamyr.academy.test';</script>
-  <script src="js/i18n.js?v=21"></script>
-  <script src="js/engine.js?v=21"></script>
-  <script src="js/content.js?v=21"></script>
-  <script src="js/content-ent.js?v=21"></script>
-  <script src="js/kk-ent.js?v=21"></script>
-  <script src="js/kk.js?v=21"></script>
-  <script src="js/learner.js?v=21"></script>
-  <script src="js/config.js?v=21"></script>
+  <script src="js/i18n.js?v=22"></script>
+  <script src="js/engine.js?v=22"></script>
+  <script src="js/content.js?v=22"></script>
+  <script src="js/content-ent.js?v=22"></script>
+  <script src="js/kk-ent.js?v=22"></script>
+  <script src="js/kk.js?v=22"></script>
+  <script src="js/fsrs.js?v=22"></script>
+  <script src="js/learner.js?v=22"></script>
+  <script src="js/config.js?v=22"></script>
   <script>window.Tamyr.CONFIG = { supabaseUrl: '', supabaseKey: '' }; // тесты всегда идут без облака</script>
-  <script src="js/account.js?v=21"></script>
+  <script src="js/account.js?v=22"></script>
   <script>
     const T = window.Tamyr, L = T.learner;
     const out = document.getElementById('tests');
@@ -145,16 +146,38 @@
       assert(!L.roots().includes('frac'));
       assert(L.roots().length > 0 && L.roots().every(id => !L.locked(id)), 'новые корни');
     });
-    test('Интервальные повторения: 1 день → 3 → 9 (закреплено); провал возвращает в работу', () => {
+    test('Интервальные повторения по FSRS: интервал растёт, тема закрепляется; провал возвращает в работу', () => {
       seeded(); L.completeLesson('frac'); master('frac');
+      eq(L.topic('frac').ivl, 3, 'освоено без ошибок — первое повторение через 3 дня: ');
       assert(!L.isDue('frac'), 'сегодня повторять рано');
-      L.advance(1); assert(L.isDue('frac'), 'через день — пора');
-      eq(L.today()[0].topic, 'frac'); eq(L.today()[0].kind, 'check');
-      assert(L.checkResult('frac', 2)); eq(L.topic('frac').ivl, 3); assert(!L.isDue('frac'));
-      L.advance(3); assert(L.isDue('frac'));
-      assert(L.checkResult('frac', 2)); eq(L.topic('frac').ivl, 9); eq(L.topic('frac').st, 'solid');
-      L.advance(9); assert(!L.checkResult('frac', 1)); eq(L.topic('frac').st, 'learning');
+      L.advance(3); assert(L.isDue('frac'), 'через 3 дня — пора');
+      assert(L.today().some(x => x.topic === 'frac' && x.kind === 'check'), 'проверка дробей в плане');
+      assert(L.checkResult('frac', 2)); const second = L.topic('frac').ivl;
+      assert(second >= 9 && second <= 14, 'второй интервал ' + second); eq(L.topic('frac').st, 'solid');
+      L.advance(second); assert(L.isDue('frac'));
+      assert(L.checkResult('frac', 2)); assert(L.topic('frac').ivl > second, 'интервал растёт');
+      const s = L.topic('frac').fs.s;
+      L.advance(L.topic('frac').ivl); assert(!L.checkResult('frac', 1)); eq(L.topic('frac').st, 'learning');
+      assert(L.topic('frac').fs.s < s, 'после забывания память слабее');
       assert(L.roots().includes('frac'), 'забытая тема снова в плане');
+    });
+    test('Прогресс до FSRS: закреплённая тема остаётся закреплённой, интервал растёт', () => {
+      seeded(); const old = JSON.parse(JSON.stringify(L.get()));
+      Object.assign(old.topics.frac, { st: 'solid', ivl: 9, due: L.now(), fs: undefined });
+      assert(L._load(old)); assert(L.topic('frac').fs, 'память восстановлена');
+      assert(L.checkResult('frac', 2)); eq(L.topic('frac').st, 'solid'); assert(L.topic('frac').ivl > 9, 'интервал ' + L.topic('frac').ivl);
+    });
+    test('FSRS: ошибки при освоении — повторение раньше; вероятность вспомнить падает со временем', () => {
+      seeded(); L.completeLesson('frac');
+      L.practiceAnswer('frac', false, true); master('frac');
+      eq(L.topic('frac').ivl, 1, 'освоено с ошибкой — повтор завтра: ');
+      const F = T.fsrs, c = F.review(null, F.GOOD, 0);
+      eq(F.interval(c), 3);
+      const r0 = F.retrievability(c, 0), r3 = F.retrievability(c, 3 * 86400000), r10 = F.retrievability(c, 10 * 86400000);
+      assert(r0 === 1 && r3 > 0.89 && r3 < 0.92 && r10 < r3, [r0, r3, r10].join(' '));
+      assert(F.review(c, F.EASY, 3 * 86400000).s > F.review(c, F.GOOD, 3 * 86400000).s, '«легко» укрепляет сильнее');
+      eq(F.sanitize({ s: 'x', d: 1, last: 0 }), null);
+      L.advance(1); eq(L.memory()[0].id, 'frac', 'слабее всего помнится тема, освоенная с ошибкой: ');
     });
     test('Ошибка «чужой» темы ставит ту тему на проверку сегодня', () => {
       seeded();
@@ -200,7 +223,7 @@
     });
 
     test('Все скрипты приложения разбираются без синтаксических ошибок', () => {
-      ['data', 'data-ent', 'i18n', 'engine', 'content', 'content-ent', 'kk-ent', 'kk', 'learner', 'graph', 'store', 'config', 'account', 'app', 'teacher'].forEach(name => {
+      ['data', 'data-ent', 'i18n', 'engine', 'content', 'content-ent', 'kk-ent', 'kk', 'fsrs', 'learner', 'graph', 'store', 'config', 'account', 'app', 'teacher'].forEach(name => {
         const xhr = new XMLHttpRequest();
         xhr.open('GET', 'js/' + name + '.js?t=' + Date.now(), false); xhr.send();
         assert(xhr.status === 200, 'нет файла ' + name);

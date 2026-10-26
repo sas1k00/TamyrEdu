@@ -25,6 +25,7 @@ ACCESS = {}     # access_token -> (user_id, expires)
 REFRESH = {}    # refresh_token -> user_id
 PROGRESS = {}   # user_id -> {user_id, state, updated_at}
 AI_USED = {}    # (user_id, день) -> сколько объяснений ИИ запрошено
+ANSWERS = []    # журнал ответов: как public.answers, но в памяти
 AI_LIMIT = 20
 VERIFY = {}     # одноразовый токен из письма -> (user_id, kind, redirect)
 
@@ -211,6 +212,20 @@ class Handler(BaseHTTPRequestHandler):
             if method == 'DELETE':
                 if wanted == user['id']:
                     PROGRESS.pop(user['id'], None)
+                return self.send(204)
+
+        if path == '/rest/v1/answers':
+            if method == 'POST':
+                rows = self.body()
+                if not isinstance(rows, list) or any(not isinstance(r, dict) or r.get('mode') not in ('diag', 'practice', 'check') for r in rows):
+                    return self.send(400, {'code': '23514', 'message': 'new row violates check constraint'})
+                ANSWERS.extend(dict(r, user_id=user['id']) for r in rows)
+                print('[answers] +%d (всего %d)' % (len(rows), len(ANSWERS)), flush=True)
+                return self.send(201)
+            if method == 'GET':   # как RLS: только свои
+                return self.send(200, [r for r in ANSWERS if r['user_id'] == user['id']])
+            if method == 'DELETE':
+                ANSWERS[:] = [r for r in ANSWERS if r['user_id'] != user['id']]
                 return self.send(204)
 
         if path == '/functions/v1/explain' and method == 'POST':
