@@ -463,6 +463,31 @@ sup { font-size: .7em; }
   100% { opacity: 0; transform: translate(var(--x), calc(var(--y) + 420px)) rotate(var(--r)); }
 }
 
+/* Классы */
+.cls-head { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.cls-head h2 { margin: 0; }
+.cls-head form, .join-box form { margin: 0; flex-wrap: nowrap; }
+.cls-head input, .join-box input { font: inherit; padding: 9px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); min-width: 0; width: 220px; }
+.cls-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 16px; }
+.cls-tab { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.cls-tab span { color: var(--ink-2); font-weight: 500; margin-left: 4px; }
+.cls-tab.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.cls-tab.on span { color: var(--accent-ink); opacity: .8; }
+.cls-code { display: flex; flex-wrap: wrap; gap: 16px 40px; align-items: center; background: var(--accent-soft); border-radius: 16px; padding: 16px 20px; margin-bottom: 12px; }
+.cls-code > div:first-child { display: grid; }
+.cls-code .code { font-size: 2.4rem; letter-spacing: .14em; color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.cls-share { flex: 1 1 280px; min-width: 0; }
+.cls-share p { margin: 0 0 6px; }
+.cls-share code { overflow-wrap: anywhere; background: var(--surface); padding: 6px 10px; border-radius: 8px; }
+.cls-members summary { cursor: pointer; font-weight: 600; color: var(--accent); margin: 4px 0 8px; }
+.cls-members ul { list-style: none; padding: 0; margin: 0 0 12px; }
+.cls-members li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+.join-box { border-top: 1px solid var(--line); margin: 18px 0; padding-top: 18px; }
+.join-box h2 { margin-bottom: 10px; }
+.join-box input { text-transform: uppercase; letter-spacing: .08em; width: 240px; }
+.join-box input::placeholder { text-transform: none; letter-spacing: normal; }
+@media (max-width: 720px) { .cls-head input, .join-box input { width: 100%; flex: 1; } .cls-code .code { font-size: 2rem; } }
+
 /* Память по темам (FSRS) */
 .memory { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
 .memory li { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(60px, 1fr) 44px; gap: 4px 10px; align-items: center; font-size: .92rem; }

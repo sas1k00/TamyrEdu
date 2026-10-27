@@ -508,14 +508,8 @@
   }
 
   /* ---------- Прогресс ---------- */
-  /* Код «ученик → учитель» в формате Tamyr: панель учителя знает только статусы диагностики,
-     поэтому «изучаю» передаём как пробел, «закреплено» — как освоено. */
-  function shareCode() {
-    const S = L.get(), map = L.statusMap(), status = {};
-    T.TOPICS.forEach(tp => { status[tp.id] = { learning: 'gap', solid: 'mastered' }[map[tp.id]] || map[tp.id]; });
-    const misconceptions = Object.entries(S.mis).map(([id, count]) => ({ id, count }));
-    return T.store.encode(T.store.compact(S.name, 'full', { status, rootGaps: L.roots(), misconceptions, asked: S.diag ? S.diag.asked : 0 }));
-  }
+  /* Код «ученик → учитель»: та же сводка, что видит учитель класса. */
+  const shareCode = () => T.store.encode(L.summarize(L.get()));
 
   /* В истории хранится только вид события — текст подставляется на текущем языке. */
   function logText(e) {
@@ -626,6 +620,7 @@
     const r = await A.sync();
     if (r === 'ask') return go('#account');
     ui.auth.note = null;
+    if (ui.joinCode) return go('#account'); // пришёл по ссылке класса — сразу к вступлению
     if (A.isTeacher()) return go('#teacher');
     go(L.exists() ? '#home' : '#start');
   }
@@ -671,6 +666,7 @@
           <button class="btn small" id="out">${t('Выйти')}</button>
         </div>
         ${own ? `<p class="muted small">${t('При выходе прогресс остаётся в аккаунте, а с этого устройства убирается.')}</p>` : ''}
+        ${classBox()}
         <p class="muted small">${t('Твои ответы на задачи сохраняются без имени и почты — по ним Tamyr учится точнее подбирать повторения.')}
           <button class="link small" id="del-answers">${ui.delAnswers === 'done' ? t('Ответы удалены') : ui.delAnswers === 'ask' ? t('Точно удалить все мои ответы?') : t('Удалить мои ответы')}</button></p>
         <a class="btn ghost" href="#home">${t('На главную')}</a>
@@ -682,12 +678,69 @@
     const sync = app.querySelector('#sync');
     if (sync) sync.addEventListener('click', () => A.sync().then(r => { if (r === 'pull') route(); }));
     app.querySelector('#out').addEventListener('click', signOut);
+    bindClassBox();
     app.querySelector('#del-answers').addEventListener('click', async () => {
       if (ui.delAnswers === 'done') return;
       if (ui.delAnswers !== 'ask') { ui.delAnswers = 'ask'; return viewAccount(); }
       try { await A.deleteAnswers(); ui.delAnswers = 'done'; } catch (e) { ui.delAnswers = null; ui.auth.note = t('Не получилось удалить ответы. Попробуй ещё раз позже.'); }
       viewAccount();
     });
+  }
+
+  /* ---------- Мой класс: вступить по коду учителя ---------- */
+  // ui.myClasses: null — не загружено, false — классов в облаке нет (supabase/classes.sql не выполнен), [] — список
+  async function loadMyClasses() {
+    if (ui.classesLoading || !A.user()) return;
+    ui.classesLoading = true;
+    try { ui.myClasses = (await A.classes.list() || []).filter(c => c.teacher_id !== A.user().id); }
+    catch (e) { ui.myClasses = e.status === 404 ? false : []; }
+    ui.classesLoading = false;
+    if (location.hash === '#account' && A.user()) viewAccount();
+  }
+
+  function classBox() {
+    if (ui.myClasses === undefined || ui.myClasses === null) { loadMyClasses(); return ''; }
+    if (ui.myClasses === false) return '';
+    const msg = ui.joinMsg;
+    return `<div class="join-box">
+      <h2>${t('Мой класс')}</h2>
+      ${ui.myClasses.length ? `<ul class="past">${ui.myClasses.map(c => `<li><b>${esc(c.name)}</b><button class="link small" data-leave="${esc(c.id)}">${ui.leaving === c.id ? t('Точно выйти из класса?') : t('Выйти из класса')}</button></li>`).join('')}</ul>` : ''}
+      <form id="join-form" class="row">
+        <input id="join-code" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="${t('Код от учителя, например K7M2QX')}" aria-label="${t('Код класса')}" value="${esc(ui.joinCode || '')}">
+        <button class="btn small primary" type="submit" ${ui.joining ? 'disabled' : ''}>${t('Вступить')}</button>
+      </form>
+      ${msg ? `<p class="${msg.ok ? 'ok-msg' : 'bad-msg'} small" role="status">${esc(msg.text)}</p>` : ''}
+      <p class="muted small">${t('Учитель класса увидит твою карту тем и типичные ошибки. Выйти из класса можно в любой момент.')}</p>
+    </div>`;
+  }
+
+  function bindClassBox() {
+    const form = app.querySelector('#join-form');
+    if (!form) return;
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const code = app.querySelector('#join-code').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (code.length !== 6) { ui.joinMsg = { ok: false, text: t('Код класса — 6 букв и цифр.') }; return viewAccount(); }
+      ui.joining = true; viewAccount();
+      try {
+        const c = await A.classes.join(code);
+        ui.joinMsg = c ? { ok: true, text: t('Ты в классе «{name}». Учитель увидит твою карту тем.', { name: c.name }) }
+          : { ok: false, text: t('Класс с таким кодом не найден — проверь код у учителя.') };
+        if (c) { ui.joinCode = null; A.flush(); } // чтобы учитель сразу увидел свежий прогресс
+      } catch (err) {
+        ui.joinMsg = { ok: false, text: err.kind === 'network' ? t('Нет связи с сервером. Проверь интернет и попробуй ещё раз.') : t('Не получилось вступить. Попробуй ещё раз позже.') };
+      }
+      ui.joining = false; ui.myClasses = null;
+      viewAccount();
+    });
+    app.querySelectorAll('[data-leave]').forEach(b => b.addEventListener('click', async () => {
+      if (ui.leaving !== b.dataset.leave) { ui.leaving = b.dataset.leave; return viewAccount(); }
+      ui.leaving = null;
+      try { await A.classes.leave(b.dataset.leave); ui.joinMsg = null; }
+      catch (err) { ui.joinMsg = { ok: false, text: t('Не получилось выйти из класса. Попробуй ещё раз позже.') }; }
+      ui.myClasses = null;
+      viewAccount();
+    }));
   }
 
   function viewAuthForm() {
@@ -794,7 +847,7 @@
     if (!A.enabled) return;
     const calm = () => ['home', 'map', 'progress', 'account', ''].includes((location.hash.replace('#', '') || 'home').split('/')[0]);
     // вошёл, вышел или сменилась роль: обновляем шапку, а с панели учителя уводим, если она больше не положена
-    A.onChange = () => { chromeAccount(); if (location.hash.split('/')[0] === '#teacher') route(); };
+    A.onChange = () => { ui.myClasses = null; chromeAccount(); if (location.hash.split('/')[0] === '#teacher') route(); };
     A.onStatus = () => { if (location.hash === '#account' && A.user() && !document.querySelector('#pass-form')) viewAccount(); };
     if (A.arrival === 'recovery') ui.auth.mode = 'newpass';
     if (A.arrival === 'confirmed') ui.auth.note = t('Почта подтверждена — ты в аккаунте.');
@@ -828,6 +881,14 @@
     if (view !== 'progress') ui.confirmReset = false;
     window.scrollTo(0, 0);
     if (view === 'demo') return demo();
+    if (view === 'join') {
+      // ссылка класса: код запоминаем и ведём в аккаунт — там вступление (гостю сначала вход)
+      ui.joinCode = String(arg || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+      ui.joinMsg = null;
+      if (A.enabled && !A.user()) ui.auth.note = t('Войди или создай аккаунт, чтобы вступить в класс {code}.', { code: ui.joinCode });
+      history.replaceState(null, '', A.enabled ? '#account' : '#home');
+      return route();
+    }
     if (view === 'start' || view === 'setup') return viewStart(); // #setup — адрес из хакатонной версии
     if (view === 'quiz') return viewQuiz();
     if (view === 'teacher') {

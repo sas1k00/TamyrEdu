@@ -33,8 +33,117 @@
 
   let showDemo = true;
 
+  /* ---------- Классы из облака (supabase/classes.sql) ----------
+     Учитель создаёт класс, ученики вступают по коду, их прогресс приходит сюда сам. Кто что видит, решают правила базы. */
+  const A = T.account;
+  const t = T.t;
+  const cls = { list: null, members: [], data: {}, sel: null, busy: false, loadedAt: 0, error: null, confirmDrop: false, kick: null, autoDemoOff: false, open: false };
+  const cloud = () => !!A && A.enabled && A.isTeacher();
+  const myId = () => (A.user() ? A.user().id : null);
+  const rerender = () => { if (location.hash.split('/')[0] === '#teacher') T.viewTeacher(document.getElementById('app')); };
+
+  async function loadClass(id) {
+    const ids = cls.members.filter(m => m.class_id === id).map(m => m.user_id);
+    const rows = await A.classes.progressOf(ids);
+    cls.data[id] = {};
+    (rows || []).forEach(r => { cls.data[id][r.user_id] = r; });
+  }
+  async function loadClasses() {
+    if (cls.busy) return;
+    cls.busy = true; cls.error = null;
+    try {
+      const [list, members] = await Promise.all([A.classes.list(), A.classes.members()]);
+      cls.list = (list || []).filter(c => c.teacher_id === myId());
+      cls.members = members || [];
+      if (cls.sel && !cls.list.some(c => c.id === cls.sel)) cls.sel = null;
+      if (!cls.sel && cls.list.length) cls.sel = cls.list[cls.list.length - 1].id;
+      // есть настоящий класс — демо больше не мешает (включить обратно можно переключателем)
+      if (cls.sel && !cls.autoDemoOff) { showDemo = false; cls.autoDemoOff = true; }
+      if (cls.sel) await loadClass(cls.sel);
+    } catch (e) {
+      cls.error = t('Не удалось загрузить классы. Проверь интернет и обнови страницу.');
+      if (!cls.list) cls.list = [];
+    }
+    cls.busy = false; cls.loadedAt = Date.now();
+    rerender();
+  }
+
+  /* Ученики выбранного класса в формате панели: сводка их прогресса, имя — из аккаунта. */
+  function classRows() {
+    const data = cls.sel && cls.data[cls.sel];
+    if (!data) return [];
+    return cls.members.filter(m => m.class_id === cls.sel).map(m => {
+      const c = data[m.user_id] && T.learner.summarize(data[m.user_id].state);
+      if (c && m.student_name) c.n = m.student_name;
+      return c;
+    }).filter(Boolean);
+  }
+
+  function classesHtml() {
+    if (!cloud()) return '';
+    if (cls.list === null) return `<section class="card classes"><h2>${t('Мои классы')}</h2><p class="muted">${t('Загружаем классы…')}</p></section>`;
+    const sel = cls.list.find(c => c.id === cls.sel);
+    const members = sel ? cls.members.filter(m => m.class_id === sel.id) : [];
+    const data = (sel && cls.data[sel.id]) || {};
+    const link = sel ? location.origin + location.pathname + '#join/' + sel.code : '';
+    return `<section class="card classes">
+      <div class="cls-head"><h2>${t('Мои классы')}</h2>
+        <form id="new-class" class="row"><input id="cname" maxlength="60" required placeholder="${t('Например, 11 «А»')}" aria-label="${t('Название класса')}"><button class="btn small primary" type="submit">${t('Создать класс')}</button></form>
+      </div>
+      ${cls.error ? `<p class="bad-msg small" role="alert">${esc(cls.error)}</p>` : ''}
+      ${cls.list.length ? `<div class="cls-tabs">${cls.list.map(c => `<button class="cls-tab${c.id === cls.sel ? ' on' : ''}" data-cls="${esc(c.id)}" aria-pressed="${c.id === cls.sel}">${esc(c.name)} <span>${cls.members.filter(m => m.class_id === c.id).length}</span></button>`).join('')}</div>`
+        : `<p class="muted">${t('Создайте класс — ученики вступят по коду, и их карты тем появятся здесь сами.')}</p>`}
+      ${sel ? `<div class="cls-code">
+          <div><span class="muted small">${t('Код класса')}</span><b class="code">${esc(sel.code)}</b></div>
+          <div class="cls-share"><p class="small muted">${t('Ученик вводит код в своём аккаунте или открывает ссылку:')}</p>
+            <div class="row"><code class="small">${esc(link)}</code><button class="btn small" id="copy-link">${t('Скопировать ссылку')}</button></div></div>
+        </div>
+        <details class="cls-members"${cls.open ? ' open' : ''}><summary>${t('Ученики класса')} (${members.length})</summary>
+          ${members.length ? `<ul>${members.map(m => `<li><span>${esc(m.student_name || t('Без имени'))}${data[m.user_id] ? '' : ` <span class="muted small">· ${t('ещё нет прогресса')}</span>`}</span><button class="link small" data-kick="${esc(m.user_id)}">${cls.kick === m.user_id ? t('Точно убрать?') : t('Убрать')}</button></li>`).join('')}</ul>`
+            : `<p class="muted small">${t('Пока никто не вступил. Напишите код на доске — это займёт минуту.')}</p>`}
+          <button class="btn small danger" id="drop-class">${cls.confirmDrop ? t('Точно удалить класс «{name}»?', { name: esc(sel.name) }) : t('Удалить класс')}</button>
+        </details>` : ''}
+    </section>`;
+  }
+
+  function bindClasses(app) {
+    if (!cloud() || !cls.list) return;
+    // список учеников остаётся раскрытым между перерисовками — иначе подтверждение «Точно убрать?» пряталось бы
+    const det = app.querySelector('.cls-members');
+    if (det) det.addEventListener('toggle', () => { cls.open = det.open; });
+    const act = async (fn, fail) => { try { await fn(); } catch (e) { cls.error = fail; } await loadClasses(); };
+    app.querySelector('#new-class').addEventListener('submit', e => {
+      e.preventDefault();
+      const name = app.querySelector('#cname').value.trim();
+      if (!name) return;
+      act(async () => { const c = await A.classes.create(name); cls.sel = c && c.id; }, t('Не удалось создать класс.'));
+    });
+    app.querySelectorAll('[data-cls]').forEach(b => b.addEventListener('click', async () => {
+      cls.sel = b.dataset.cls; cls.confirmDrop = false; cls.kick = null;
+      if (!cls.data[cls.sel]) { try { await loadClass(cls.sel); } catch (e) { cls.error = t('Не удалось загрузить классы. Проверь интернет и обнови страницу.'); } }
+      rerender();
+    }));
+    const copy = app.querySelector('#copy-link');
+    if (copy) copy.addEventListener('click', async () => {
+      const text = app.querySelector('.cls-share code').textContent;
+      try { await navigator.clipboard.writeText(text); copy.textContent = t('Скопировано'); } catch (e) { copy.textContent = text; }
+    });
+    app.querySelectorAll('[data-kick]').forEach(b => b.addEventListener('click', () => {
+      if (cls.kick !== b.dataset.kick) { cls.kick = b.dataset.kick; return rerender(); }
+      cls.kick = null;
+      act(() => A.classes.remove(cls.sel, b.dataset.kick), t('Не удалось убрать ученика.'));
+    }));
+    const drop = app.querySelector('#drop-class');
+    if (drop) drop.addEventListener('click', () => {
+      if (!cls.confirmDrop) { cls.confirmDrop = true; return rerender(); }
+      cls.confirmDrop = false;
+      const id = cls.sel; cls.sel = null; delete cls.data[id];
+      act(() => A.classes.drop(id), t('Не удалось удалить класс.'));
+    });
+  }
+
   function roster() {
-    return (showDemo ? demoClass() : []).concat(T.store.imported()).map(c => Object.assign(T.store.expand(c), { demo: !!c.demo }));
+    return (showDemo ? demoClass() : []).concat(classRows(), T.store.imported()).map(c => Object.assign(T.store.expand(c), { demo: !!c.demo }));
   }
 
   function csv(rows) {
@@ -44,6 +153,8 @@
   }
 
   T.viewTeacher = function (app) {
+    // классы обновляем при входе на панель, но не чаще раза в минуту
+    if (cloud() && !cls.busy && Date.now() - cls.loadedAt > 60000) loadClasses();
     const rows = roster();
     const n = rows.length;
     const rootCount = {};
@@ -70,6 +181,7 @@
           <div><b>${clean}</b><span>${T.t('без пробелов')}</span></div>
         </div>
       </section>
+      ${classesHtml()}
       <section class="card toolbar">
         <label class="switch"><input type="checkbox" id="demo" ${showDemo ? 'checked' : ''}> ${T.t('Демо-класс')} <span class="chip small warn">${T.t('симуляция: {n} виртуальных учеников', { n: DEMO_NAMES.length })}</span></label>
         <details><summary>${T.t('Добавить ученика по коду')}</summary>
@@ -103,8 +215,9 @@
           }).join('')}</tr>`).join('')}</tbody>
         </table></div>
         ${T.legendHtml(['mastered', 'inferred', 'gap', 'root', 'risk', 'unknown'])}
-      </section>` : `<section class="card"><p>${T.t('Пока нет учеников. Включите демо-класс или добавьте код ученика.')}</p></section>`}
+      </section>` : `<section class="card"><p>${cloud() && cls.sel ? T.t('Пока нет данных: ученики появятся здесь, когда вступят в класс и пройдут диагностику.') : T.t('Пока нет учеников. Включите демо-класс или добавьте код ученика.')}</p></section>`}
     `;
+    bindClasses(app);
 
     app.querySelector('#demo').addEventListener('change', e => { showDemo = e.target.checked; T.viewTeacher(app); });
     app.querySelector('#add').addEventListener('click', () => {
