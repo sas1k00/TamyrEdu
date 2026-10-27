@@ -244,6 +244,19 @@
     // Без authed(): если функция ответит 401 (например, неверно настроена), ученика не выкидываем из аккаунта.
     async explain(task) { await fresh(); return (await call('/functions/v1/explain', { method: 'POST', auth: true, body: task, timeout: 40000 })).text; },
 
+    /* Классы (supabase/classes.sql). Кто что видит, решают правила базы: учитель — свои классы и прогресс их учеников,
+       ученик — классы, в которых состоит. Здесь только запросы. */
+    classes: {
+      create: name => authed('/rest/v1/rpc/create_class', { method: 'POST', body: { class_name: name } }),
+      join: code => authed('/rest/v1/rpc/join_class', { method: 'POST', body: { class_code: code } }),
+      list: () => authed('/rest/v1/classes?select=id,name,code,teacher_id,created_at&order=created_at'),
+      members: () => authed('/rest/v1/class_members?select=class_id,user_id,student_name,joined_at&order=joined_at'),
+      progressOf: ids => (ids.length ? authed('/rest/v1/progress?select=user_id,state,updated_at&user_id=in.(' + ids.map(encodeURIComponent).join(',') + ')') : Promise.resolve([])),
+      leave: classId => authed('/rest/v1/class_members?class_id=eq.' + encodeURIComponent(classId) + '&user_id=eq.' + encodeURIComponent(session.user.id), { method: 'DELETE' }),
+      remove: (classId, userId) => authed('/rest/v1/class_members?class_id=eq.' + encodeURIComponent(classId) + '&user_id=eq.' + encodeURIComponent(userId), { method: 'DELETE' }),
+      drop: classId => authed('/rest/v1/classes?id=eq.' + encodeURIComponent(classId), { method: 'DELETE' })
+    },
+
     /* Журнал ответов для будущих моделей (supabase/answers.sql). Пишется только у вошедших: при регистрации они дали согласие.
        Ответы копятся на устройстве и уходят пачками — без сети ничего не теряется. */
     logAnswer(rec) {

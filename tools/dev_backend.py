@@ -29,6 +29,8 @@ REFRESH = {}    # refresh_token -> user_id
 PROGRESS = {}   # user_id -> {user_id, state, updated_at}
 AI_USED = {}    # (user_id, день) -> сколько объяснений ИИ запрошено
 ANSWERS = []    # журнал ответов: как public.answers, но в памяти
+CLASSES = {}    # id -> {id, teacher_id, name, code, created_at}; как supabase/classes.sql
+MEMBERS = []    # {class_id, user_id, student_name, joined_at}
 AI_LIMIT = 20
 VERIFY = {}     # одноразовый токен из письма -> (user_id, kind, redirect)
 
@@ -185,6 +187,9 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith('/auth/v1/') or path.startswith('/rest/v1/') or path.startswith('/functions/v1/'):
             if not user:
                 return self.send(401, {'code': 401, 'error_code': 'bad_jwt', 'msg': 'invalid JWT'})
+        # кто спрашивает: учитель ли он и какие классы ведёт (для правил ниже)
+        is_teacher = bool(user) and user['email'].lower() in TEACHERS
+        taught = {c['id'] for c in CLASSES.values() if user and c['teacher_id'] == user['id']}
 
         if path == '/auth/v1/logout' and method == 'POST':
             token = self.headers['Authorization'].replace('Bearer ', '', 1)
@@ -205,6 +210,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/rest/v1/progress':
             wanted = q.get('user_id', '').replace('eq.', '', 1)
             if method == 'GET':
+                if q.get('user_id', '').startswith('in.('):
+                    # учитель читает прогресс учеников своих классов (и только их), как политика в classes.sql
+                    ids = q['user_id'][4:-1].split(',')
+                    students = {m['user_id'] for m in MEMBERS if m['class_id'] in taught} if is_teacher else set()
+                    return self.send(200, [{'user_id': i, 'state': PROGRESS[i]['state'], 'updated_at': PROGRESS[i]['updated_at']}
+                                           for i in ids if i in PROGRESS and (i == user['id'] or i in students)])
                 # как Row Level Security: чужую строку не видно, даже если попросить её по id
                 row = PROGRESS.get(user['id']) if wanted in ('', user['id']) else None
                 return self.send(200, [{'state': row['state'], 'updated_at': row['updated_at']}] if row else [])
@@ -227,6 +238,44 @@ class Handler(BaseHTTPRequestHandler):
             email = str(b.get('email', '')).lower()
             (TEACHERS.add if b.get('teacher', True) else TEACHERS.discard)(email)
             return self.send(200, {'teachers': sorted(TEACHERS)})
+
+        # --- классы: те же правила, что в supabase/classes.sql ---
+        if path == '/rest/v1/rpc/create_class' and method == 'POST':
+            if not is_teacher:
+                return self.send(400, {'code': 'P0001', 'message': 'only teachers can create classes'})
+            alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+            code = ''.join(secrets.choice(alphabet) for _ in range(6))
+            c = {'id': str(uuid.uuid4()), 'teacher_id': user['id'], 'name': str(self.body().get('class_name', '')).strip()[:60] or '?',
+                 'code': code, 'created_at': time.strftime('%Y-%m-%dT%H:%M:%S')}
+            CLASSES[c['id']] = c
+            return self.send(200, {'id': c['id'], 'name': c['name'], 'code': code})
+        if path == '/rest/v1/rpc/join_class' and method == 'POST':
+            code = ''.join(ch for ch in str(self.body().get('class_code', '')) if ch.isalnum()).upper()
+            c = next((x for x in CLASSES.values() if x['code'] == code), None)
+            if not c:
+                return self.send(200, None)
+            if not any(m['class_id'] == c['id'] and m['user_id'] == user['id'] for m in MEMBERS):
+                MEMBERS.append({'class_id': c['id'], 'user_id': user['id'], 'student_name': user['name'], 'joined_at': time.strftime('%Y-%m-%dT%H:%M:%S')})
+            return self.send(200, {'id': c['id'], 'name': c['name']})
+        if path == '/rest/v1/classes':
+            joined = {m['class_id'] for m in MEMBERS if m['user_id'] == user['id']}
+            visible = [c for c in CLASSES.values() if c['id'] in taught or c['id'] in joined]
+            if method == 'GET':
+                return self.send(200, sorted(visible, key=lambda c: c['created_at']))
+            if method == 'DELETE':
+                cid = q.get('id', '').replace('eq.', '', 1)
+                if cid in taught:
+                    CLASSES.pop(cid, None)
+                    MEMBERS[:] = [m for m in MEMBERS if m['class_id'] != cid]
+                return self.send(204)
+        if path == '/rest/v1/class_members':
+            mine = lambda m: m['user_id'] == user['id'] or m['class_id'] in taught
+            if method == 'GET':
+                return self.send(200, [m for m in MEMBERS if mine(m)])
+            if method == 'DELETE':
+                cid, uid = q.get('class_id', '').replace('eq.', '', 1), q.get('user_id', '').replace('eq.', '', 1)
+                MEMBERS[:] = [m for m in MEMBERS if not (mine(m) and m['class_id'] == cid and m['user_id'] == uid)]
+                return self.send(204)
 
         if path == '/rest/v1/answers':
             if method == 'POST':

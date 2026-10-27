@@ -124,6 +124,19 @@
       return T.TOPICS.filter(t => OPEN.has(tp(t.id).st) && !hasOpenBelow(t.id)).sort((a, b) => a.level - b.level).map(t => t.id);
     },
     openTopics() { return T.TOPICS.filter(t => OPEN.has(tp(t.id).st)).sort((a, b) => a.level - b.level).map(t => t.id); },
+    /* Сводка любого сохранённого прогресса — своего или ученика из класса — в формате кода «ученик → учитель».
+       Панель учителя знает только статусы диагностики: «изучаю» передаём как пробел, «закреплено» — как освоено. */
+    summarize(state) {
+      const s = sanitize(state);
+      if (!s) return null;
+      const st = id => s.topics[id].st;
+      const openBelow = id => [...T.ancestors(id)].some(a => OPEN.has(st(a)));
+      const status = {};
+      T.TOPICS.forEach(t => { const x = st(t.id); status[t.id] = x === 'unknown' && openBelow(t.id) ? 'risk' : ({ learning: 'gap', solid: 'mastered' }[x] || x); });
+      const roots = T.TOPICS.filter(t => OPEN.has(st(t.id)) && !openBelow(t.id)).sort((a, b) => a.level - b.level).map(t => t.id);
+      const misconceptions = Object.entries(s.mis).map(([id, count]) => ({ id, count }));
+      return T.store.compact(s.name, 'full', { status, rootGaps: roots, misconceptions, asked: s.diag ? s.diag.asked : 0 });
+    },
     locked: id => hasOpenBelow(id),
     isDue: id => { const x = tp(id); return x.due !== null && x.due <= now() && !OPEN.has(x.st); },
 
