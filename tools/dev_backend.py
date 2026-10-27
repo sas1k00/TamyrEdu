@@ -4,6 +4,7 @@
     py tools/dev_backend.py                 # вход сразу после регистрации
     py tools/dev_backend.py --confirm       # как в Supabase по умолчанию: сначала подтвердить почту
     py tools/dev_backend.py --ttl 5         # токен живёт 5 секунд — проверить обновление токена
+    py tools/dev_backend.py --teachers t@school.kz   # эти почты получают роль учителя (как set_teacher в supabase/teachers.sql)
 
 Потом открыть приложение так: http://localhost:8771/index.html?backend=http://127.0.0.1:8772
 
@@ -18,7 +19,9 @@ p = argparse.ArgumentParser()
 p.add_argument('--port', type=int, default=8772)
 p.add_argument('--confirm', action='store_true', help='требовать подтверждение почты')
 p.add_argument('--ttl', type=int, default=3600, help='срок жизни токена, секунды')
+p.add_argument('--teachers', default='', help='почты учителей через запятую')
 ARGS = p.parse_args()
+TEACHERS = {e.strip().lower() for e in ARGS.teachers.split(',') if e.strip()}
 
 USERS = {}      # email -> {id, email, salt, hash, name, confirmed}
 ACCESS = {}     # access_token -> (user_id, expires)
@@ -38,17 +41,21 @@ def hash_password(password, salt):
     return hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100_000).hex()
 
 
+def app_meta(user):
+    return {'role': 'teacher' if user['email'].lower() in TEACHERS else 'student'}
+
+
 def session_for(user):
     exp = time.time() + ARGS.ttl
     # Токен выглядит как JWT (приложение читает из него id и почту), но не подписан: проверка — по таблице ACCESS.
     token = '.'.join([b64({'alg': 'none', 'typ': 'JWT'}),
-                      b64({'sub': user['id'], 'email': user['email'], 'exp': int(exp), 'user_metadata': {'name': user['name']}}),
+                      b64({'sub': user['id'], 'email': user['email'], 'exp': int(exp), 'user_metadata': {'name': user['name']}, 'app_metadata': app_meta(user)}),
                       secrets.token_urlsafe(16)])
     refresh = secrets.token_urlsafe(24)
     ACCESS[token] = (user['id'], exp)
     REFRESH[refresh] = user['id']
     return {'access_token': token, 'token_type': 'bearer', 'expires_in': ARGS.ttl, 'refresh_token': refresh,
-            'user': {'id': user['id'], 'email': user['email'], 'user_metadata': {'name': user['name']}}}
+            'user': {'id': user['id'], 'email': user['email'], 'user_metadata': {'name': user['name']}, 'app_metadata': app_meta(user)}}
 
 
 def by_id(uid):
@@ -193,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
                     user['salt'] = secrets.token_bytes(16)
                     user['hash'] = hash_password(str(b['password']), user['salt'])
                     user['confirmed'] = True
-            return self.send(200, {'id': user['id'], 'email': user['email'], 'user_metadata': {'name': user['name']}})
+            return self.send(200, {'id': user['id'], 'email': user['email'], 'user_metadata': {'name': user['name']}, 'app_metadata': app_meta(user)})
 
         if path == '/rest/v1/progress':
             wanted = q.get('user_id', '').replace('eq.', '', 1)
@@ -213,6 +220,13 @@ class Handler(BaseHTTPRequestHandler):
                 if wanted == user['id']:
                     PROGRESS.pop(user['id'], None)
                 return self.send(204)
+
+        if path == '/dev/teacher' and method == 'POST':
+            # только для разработки: выдать или снять роль, как select public.set_teacher(...)
+            b = self.body()
+            email = str(b.get('email', '')).lower()
+            (TEACHERS.add if b.get('teacher', True) else TEACHERS.discard)(email)
+            return self.send(200, {'teachers': sorted(TEACHERS)})
 
         if path == '/rest/v1/answers':
             if method == 'POST':

@@ -361,6 +361,7 @@ h2 { letter-spacing: -.015em; }
 .topbar .tabs a svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .topbar .tabs a:hover { color: var(--accent); background: var(--accent-soft); }
 .topbar .tabs a.active { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.topbar .tabs a[hidden] { display: none; }
 .tools { display: flex; align-items: center; gap: 6px; }
 .topbar .acct { color: var(--accent-ink); background: var(--accent); margin-left: 0; padding: 7px 16px; box-shadow: 0 4px 12px -4px var(--glow); }
 .topbar .acct.in { color: var(--accent); background: var(--accent-soft); box-shadow: none; }

@@ -71,7 +71,7 @@
         <div class="cta">
           <a class="btn primary" href="#start">${t('Найти мой корень')}</a>
           <a class="btn" href="#demo">${t('Посмотреть на примере')}</a>
-          <a class="btn ghost" href="#teacher">${t('Панель учителя')}</a>
+          ${teacherOk() ? `<a class="btn ghost" href="#teacher">${t('Панель учителя')}</a>` : ''}
         </div>
         <ul class="facts"><li><b>${T.TOPICS.length}</b> ${t('тем ЕНТ на одной карте')}</li><li><b>RU · KZ</b> ${t('два языка')}</li><li><b>${t('Бесплатно')}</b> ${t('и работает без интернета')}</li></ul>
         </div>
@@ -626,6 +626,7 @@
     const r = await A.sync();
     if (r === 'ask') return go('#account');
     ui.auth.note = null;
+    if (A.isTeacher()) return go('#teacher');
     go(L.exists() ? '#home' : '#start');
   }
 
@@ -655,6 +656,7 @@
         <p class="eyebrow">${t('Аккаунт')}</p>
         <h1>${esc(user.name || user.email)}</h1>
         <p class="muted">${esc(user.email)}</p>
+        ${A.isTeacher() ? `<p><span class="chip">${t('Учительский аккаунт')}</span> <a class="btn small" href="#teacher">${t('Панель учителя')}</a></p>` : ''}
         ${ui.auth.note ? `<p class="banner">${esc(ui.auth.note)}</p>` : ''}
         ${remote ? `
           <div class="note">
@@ -773,8 +775,12 @@
     });
   }
 
-  /* Кнопка аккаунта в шапке и подпись в подвале. */
+  /* Панель учителя — только для учительских аккаунтов. Без облака (config.js пуст) аккаунтов нет, и панель открыта, как раньше. */
+  const teacherOk = () => !A.enabled || A.isTeacher();
+
+  /* Кнопка аккаунта в шапке, вкладка «Учителю» и подпись в подвале. */
   function chromeAccount() {
+    document.querySelector('[data-nav="teacher"]').hidden = !teacherOk();
     const link = document.getElementById('acct');
     const user = A.enabled ? A.user() : null;
     link.hidden = !A.enabled;
@@ -787,13 +793,14 @@
     chromeAccount();
     if (!A.enabled) return;
     const calm = () => ['home', 'map', 'progress', 'account', ''].includes((location.hash.replace('#', '') || 'home').split('/')[0]);
-    A.onChange = chromeAccount;
+    // вошёл, вышел или сменилась роль: обновляем шапку, а с панели учителя уводим, если она больше не положена
+    A.onChange = () => { chromeAccount(); if (location.hash.split('/')[0] === '#teacher') route(); };
     A.onStatus = () => { if (location.hash === '#account' && A.user() && !document.querySelector('#pass-form')) viewAccount(); };
     if (A.arrival === 'recovery') ui.auth.mode = 'newpass';
     if (A.arrival === 'confirmed') ui.auth.note = t('Почта подтверждена — ты в аккаунте.');
     if (A.arrival === 'link-error') ui.auth.error = t('Ссылка из письма не сработала или устарела. Запроси новую.');
     // Сверка при запуске, при возвращении сети и когда вкладку снова открыли. Экран перерисовываем, только если человек не посреди задачи.
-    const resync = () => { if (A.user()) A.sync().then(r => { if (r === 'ask') go('#account'); else if ((r === 'pull' || !L.exists()) && calm()) route(); }); };
+    const resync = () => { if (A.user()) A.refreshRole().catch(() => {}); if (A.user()) A.sync().then(r => { if (r === 'ask') go('#account'); else if ((r === 'pull' || !L.exists()) && calm()) route(); }); };
     resync();
     window.addEventListener('online', resync);
     document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - A.status().at > 300000) resync(); });
@@ -823,7 +830,14 @@
     if (view === 'demo') return demo();
     if (view === 'start' || view === 'setup') return viewStart(); // #setup — адрес из хакатонной версии
     if (view === 'quiz') return viewQuiz();
-    if (view === 'teacher') return T.viewTeacher(app);
+    if (view === 'teacher') {
+      if (teacherOk()) return T.viewTeacher(app);
+      // ученику панель не показываем вовсе; гостю предлагаем войти — вдруг это учитель
+      if (A.user()) { history.replaceState(null, '', '#home'); return route(); }
+      ui.auth.note = t('Эта страница — для учителей. Войди учительским аккаунтом.');
+      history.replaceState(null, '', '#account');
+      return route();
+    }
     if (view === 'account') return viewAccount();
     if (view === 'map') return viewMap();
     if (!L.exists()) return viewLanding();
