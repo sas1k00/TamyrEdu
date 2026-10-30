@@ -20,6 +20,7 @@ p.add_argument('--port', type=int, default=8772)
 p.add_argument('--confirm', action='store_true', help='требовать подтверждение почты')
 p.add_argument('--ttl', type=int, default=3600, help='срок жизни токена, секунды')
 p.add_argument('--teachers', default='', help='почты учителей через запятую')
+p.add_argument('--old-answers', action='store_true', help='таблица answers без столбца recall (как до перевыполнения answers.sql)')
 ARGS = p.parse_args()
 TEACHERS = {e.strip().lower() for e in ARGS.teachers.split(',') if e.strip()}
 
@@ -280,6 +281,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/rest/v1/answers':
             if method == 'POST':
                 rows = self.body()
+                if ARGS.old_answers and any('recall' in r for r in rows if isinstance(r, dict)):
+                    return self.send(400, {'code': 'PGRST204', 'message': "Could not find the 'recall' column of 'answers' in the schema cache"})
                 if not isinstance(rows, list) or any(not isinstance(r, dict) or r.get('mode') not in ('diag', 'practice', 'check') for r in rows):
                     return self.send(400, {'code': '23514', 'message': 'new row violates check constraint'})
                 ANSWERS.extend(dict(r, user_id=user['id']) for r in rows)
