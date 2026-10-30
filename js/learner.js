@@ -17,6 +17,7 @@
   const DAY = 86400000;
   const NEED = 3;        // верных подряд для освоения
   const CHECK_SIZE = 2;  // вопросов в проверке/повторении
+  const DAILY_GOAL = 10; // задач в день — около 15 минут
   const OPEN = new Set(['gap', 'learning']);          // тема в работе
   const OK = new Set(['mastered', 'solid', 'inferred']);
 
@@ -34,7 +35,7 @@
   function blank(name) {
     const topics = {};
     T.TOPICS.forEach(t => { topics[t.id] = { st: 'unknown', streak: 0, seen: [], lesson: false, due: null, ivl: 0, fs: null, miss: 0 }; });
-    return { v: 1, name: name || 'Ученик', created: Date.now(), offset: 0, topics, mis: {}, log: [], days: [], diag: null, owner, updated: 0, demo: false };
+    return { v: 1, name: name || 'Ученик', created: Date.now(), offset: 0, topics, mis: {}, log: [], days: [], daily: {}, diag: null, owner, updated: 0, demo: false };
   }
 
   /* Чужие/старые данные не должны ломать приложение: добавляем недостающие темы, выбрасываем неизвестные статусы. */
@@ -61,6 +62,8 @@
     Object.keys(s.mis || {}).forEach(k => { if (T.MISCONCEPTIONS[k] && Number.isFinite(s.mis[k])) base.mis[k] = s.mis[k]; });
     base.log = Array.isArray(s.log) ? s.log.filter(e => e && T.TOPIC[e.topic]).slice(-60) : [];
     base.days = Array.isArray(s.days) ? s.days.filter(d => typeof d === 'string').slice(-400) : [];
+    // задач решено по дням (для цели дня); храним две недели
+    if (s.daily && typeof s.daily === 'object') Object.keys(s.daily).filter(k => /^\d{4}-\d\d-\d\d$/.test(k) && Number.isFinite(s.daily[k])).sort().slice(-14).forEach(k => { base.daily[k] = Math.max(0, Math.floor(s.daily[k])); });
     base.diag = s.diag && typeof s.diag === 'object' ? s.diag : null;
     base.owner = typeof s.owner === 'string' && s.owner ? s.owner.slice(0, 64) : null;
     base.updated = Number.isFinite(s.updated) ? s.updated : 0;
@@ -186,6 +189,9 @@
       if (!q.gen && !x.seen.includes(q.id)) x.seen.push(q.id);
       if (x.seen.length >= T.questionsByTopic[id].length) x.seen = x.seen.slice(-1); // банк пройден — начинаем круг заново
       touchDay();
+      const day = dayKey(now());
+      S.daily[day] = (S.daily[day] || 0) + 1;
+      Object.keys(S.daily).sort().slice(0, -14).forEach(k => { delete S.daily[k]; });
       let flagged = null;
       if (opt && opt.mis) {
         S.mis[opt.mis] = (S.mis[opt.mis] || 0) + 1;
@@ -248,6 +254,8 @@
       return c;
     },
     /* Серия: сколько дней подряд (включая сегодня или вчера) была активность. */
+    /* Цель дня: сколько задач решено сегодня из DAILY_GOAL. */
+    goal() { return { done: S.daily[dayKey(now())] || 0, need: DAILY_GOAL }; },
     streakDays() {
       const set = new Set(S.days);
       let ts = now(), n = 0;

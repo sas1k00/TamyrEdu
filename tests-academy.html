@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tamyr Academy — тесты</title>
-  <link rel="stylesheet" href="css/style.css?v=24">
+  <link rel="stylesheet" href="css/style.css?v=25">
 </head>
 <body>
   <main>
@@ -15,21 +15,21 @@
       <ul class="tests" id="tests"></ul>
     </section>
   </main>
-  <script src="js/data.js?v=24"></script>
-  <script src="js/data-ent.js?v=24"></script>
+  <script src="js/data.js?v=25"></script>
+  <script src="js/data-ent.js?v=25"></script>
   <script>window.Tamyr.LEARNER_KEY = 'tamyr.academy.test';</script>
-  <script src="js/i18n.js?v=24"></script>
-  <script src="js/engine.js?v=24"></script>
-  <script src="js/content.js?v=24"></script>
-  <script src="js/content-ent.js?v=24"></script>
-  <script src="js/kk-ent.js?v=24"></script>
-  <script src="js/kk.js?v=24"></script>
-  <script src="js/fsrs.js?v=24"></script>
-  <script src="js/learner.js?v=24"></script>
-  <script src="js/store.js?v=24"></script>
-  <script src="js/config.js?v=24"></script>
+  <script src="js/i18n.js?v=25"></script>
+  <script src="js/engine.js?v=25"></script>
+  <script src="js/content.js?v=25"></script>
+  <script src="js/content-ent.js?v=25"></script>
+  <script src="js/kk-ent.js?v=25"></script>
+  <script src="js/kk.js?v=25"></script>
+  <script src="js/fsrs.js?v=25"></script>
+  <script src="js/learner.js?v=25"></script>
+  <script src="js/store.js?v=25"></script>
+  <script src="js/config.js?v=25"></script>
   <script>window.Tamyr.CONFIG = { supabaseUrl: '', supabaseKey: '' }; // тесты всегда идут без облака</script>
-  <script src="js/account.js?v=24"></script>
+  <script src="js/account.js?v=25"></script>
   <script>
     const T = window.Tamyr, L = T.learner;
     const out = document.getElementById('tests');
@@ -101,6 +101,14 @@
         q = T.GENERATORS.arith(rand);
         eq(value(q.options.find(o => o.ok).t), Function('return ' + q.text.replace(' = ?', '').replace(/·/g, '*').replace(/:/g, '/'))(), q.text + ': ');
       }
+    });
+    test('nextQuestion: ученику с типичной ошибкой чаще достаётся задача с той же ловушкой', () => {
+      const mis = 'frac_add_across', has = q => q.options.some(o => o.mis === mis);
+      const pool = T.questionsByTopic.frac.filter(has).length, all = T.questionsByTopic.frac.length;
+      assert(pool > 0 && pool < all, 'в банке дробей должны быть задачи и с ловушкой, и без');
+      let hit = 0, base = 0;
+      for (let i = 0; i < 400; i++) { if (has(T.nextQuestion('frac', [], T.rng(i), [mis]))) hit++; if (has(T.nextQuestion('frac', [], T.rng(i)))) base++; }
+      assert(hit > base + 60, 'с ловушкой ' + hit + ' из 400, без предпочтения ' + base);
     });
     test('nextQuestion: сначала невиданные из банка, без генератора — не повторяет последний', () => {
       const seen = [];
@@ -177,6 +185,14 @@
       eq(c.status[above], 'risk', 'непроверенная тема над пробелом — под угрозой: ');
       eq(T.store.decode(T.store.encode(L.summarize(L.get()))).r, ['frac'], 'код «ученик → учитель» — та же сводка: ');
       eq(L.summarize({ v: 2 }), null);
+    });
+    test('Цель дня: считаются задачи, решённые сегодня; завтра счёт с нуля', () => {
+      seeded(); L.completeLesson('frac');
+      eq(L.goal(), { done: 0, need: 10 });
+      for (let i = 0; i < 3; i++) L.recordAnswer('frac', q0('frac'), null);
+      eq(L.goal().done, 3);
+      assert(L._load(JSON.parse(JSON.stringify(L.get())))); eq(L.goal().done, 3, 'после перезагрузки: ');
+      L.advance(1); eq(L.goal().done, 0, 'на следующий день: ');
     });
     test('FSRS: ошибки при освоении — повторение раньше; вероятность вспомнить падает со временем', () => {
       seeded(); L.completeLesson('frac');
@@ -392,6 +408,7 @@
     const failed = results.filter(r => !r.ok).length;
     document.getElementById('summary').textContent = `${results.length - failed} из ${results.length} пройдено` + (failed ? ` · провалено: ${failed}` : '');
     document.title = (failed ? '✗ ' : '✓ ') + document.title;
+    window.TEST_RESULTS = results;
   </script>
 </body>
 </html>

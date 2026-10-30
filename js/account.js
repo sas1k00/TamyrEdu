@@ -279,6 +279,7 @@
 
   const QKEY = 'tamyr.answers', QUEUE_MAX = 500;
   let queue = [], logTimer = null, logOff = false, flushing = false;
+  let noRecall = false; // в таблице ещё нет столбца recall (answers.sql не перевыполнен) — шлём без него, ответы не теряем
   try { queue = JSON.parse(localStorage.getItem(QKEY) || '[]'); if (!Array.isArray(queue)) queue = []; } catch (e) { queue = []; }
   function saveQueue() { try { localStorage.setItem(QKEY, JSON.stringify(queue)); } catch (e) { /* нет хранилища — очередь живёт в памяти */ } }
   async function flushAnswers() {
@@ -289,7 +290,7 @@
     flushing = true;
     try {
       await authed('/rest/v1/answers', { method: 'POST', headers: { Prefer: 'return=minimal' },
-        body: batch.map(({ uid: _, ...r }) => r) });
+        body: batch.map(({ uid: _, recall, ...r }) => (noRecall ? r : Object.assign(r, { recall: recall === undefined ? null : recall }))) });
       const sent = new Set(batch);
       queue = queue.filter(r => !sent.has(r)); saveQueue();
       if (queue.some(r => r.uid === uid)) setTimeout(flushAnswers, 0);
@@ -297,6 +298,8 @@
       // нет таблицы (supabase/answers.sql ещё не выполнен) — не долбим сервер до перезагрузки, ответы ждут на устройстве
       if (e.status === 404) logOff = true;
       // сервер отверг сами записи (не прошли проверки таблицы) — выбрасываем пачку, иначе она застрянет навсегда
+      // 400 из-за нового столбца recall — повторяем ту же пачку без него
+      else if (e.status === 400 && !noRecall) { noRecall = true; flushing = false; return flushAnswers(); }
       else if (e.status === 400 || e.status === 409 || e.status === 422) { const bad = new Set(batch); queue = queue.filter(r => !bad.has(r)); saveQueue(); }
     } finally { flushing = false; }
   }

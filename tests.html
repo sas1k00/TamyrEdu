@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tamyr — тесты движка</title>
-  <link rel="stylesheet" href="css/style.css?v=24">
+  <link rel="stylesheet" href="css/style.css?v=25">
 </head>
 <body>
   <main>
@@ -18,10 +18,10 @@
       <div id="sim"></div>
     </section>
   </main>
-  <script src="js/data.js?v=24"></script>
-  <script src="js/data-ent.js?v=24"></script>
-  <script src="js/engine.js?v=24"></script>
-  <script src="js/store.js?v=24"></script>
+  <script src="js/data.js?v=25"></script>
+  <script src="js/data-ent.js?v=25"></script>
+  <script src="js/engine.js?v=25"></script>
+  <script src="js/store.js?v=25"></script>
   <script>
     const T = window.Tamyr;
     const out = document.getElementById('tests');
@@ -84,9 +84,20 @@
       const { r } = run(['lin'], new Set(), { skip: true });
       assert(r.gaps.includes('lin')); assert(r.rootGaps.length > 0);
     });
-    test('Не больше 6 вопросов на тему, у ученика с чёткими ответами — ровно 2', () => {
-      const { d } = run(T.GOALS[0].start, without('arith'));
-      T.TOPICS.forEach(t => { const n = d.state[t.id].answers.length; assert(n === 0 || n === 2, t.id + ': ' + n); });
+    test('Не больше 6 вопросов на тему, у ученика с чёткими ответами — ровно 2, у корня — 3 (перепроверка)', () => {
+      const { d, r } = run(T.GOALS[0].start, without('arith'));
+      eq(r.rootGaps, ['arith']);
+      T.TOPICS.forEach(t => { const n = d.state[t.id].answers.length; assert(n === 0 || n === (t.id === 'arith' ? 3 : 2), t.id + ': ' + n); });
+    });
+    test('Перепроверка корня: две случайные ошибки знающего ученика не делают тему корнем', () => {
+      const d = new T.Diagnostic(['frac'], { rand: T.rng(5) });
+      const ans = ok => { const c = d.next(); d.answer(c.options.findIndex(o => ok ? o.ok : (!o.ok && !o.mis))); return c.topic; };
+      ans(false); ans(false);           // две ошибки в дробях — пробел, спускаемся к арифметике
+      while (d.next() && d.next().topic !== 'frac') ans(true); // основы знает
+      eq(d.next() && d.next().topic, 'frac', 'дроби перепроверяются');
+      eq(d.next().reason.kind, 'verify');
+      ans(true); ans(true); ans(true);  // а дальше отвечает верно
+      assert(!d.result().rootGaps.includes('frac'), 'ложный корень снят');
     });
     test('Правило перевеса в 2: при ответах 1:1 тема не решается, В Н В В → освоено без вывода вниз', () => {
       const d = new T.Diagnostic(['lin'], { rand: T.rng(3) });
