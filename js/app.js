@@ -186,12 +186,12 @@
   }
 
   /* Один ответ — в журнал (только у вошедших). choice — номер варианта в банке, а не на экране: так ответы сравнимы между учениками. */
-  function logAnswer(mode, topic, q, opt, hints, shown) {
+  function logAnswer(mode, topic, q, opt, hints, shown, explore) {
     // в повторениях пишем и прогноз FSRS «вспомнит ли» — по нему потом проверим, насколько модель точна для наших учеников
     const r = mode === 'check' && L.exists() ? T.fsrs.retrievability(L.topic(topic).fs, L.now()) : null;
     A.logAnswer({ mode, topic, question: q.gen ? 'gen:' + topic : q.id, choice: opt ? q.options.indexOf(opt) : null,
       correct: !!(opt && opt.ok), mis: opt && opt.mis ? opt.mis : null, hints, ms: Math.min(3600000, Date.now() - shown),
-      recall: r === null ? null : Math.round(r * 1000) / 1000 });
+      recall: r === null ? null : Math.round(r * 1000) / 1000, explore: !!explore });
   }
 
   function finishDiagnostic() {
@@ -319,10 +319,23 @@
   }
 
   /* ---------- Практика и проверка ---------- */
+  /* 1 задача из 10 в практике — случайная задача из любой другой темы (только у вошедших: ответ уходит в журнал).
+     В журнале нужны ответы, которые не зависят от того, что выбирает движок, — иначе модель унаследует его слепые зоны.
+     На прогресс такая задача не влияет. Не первой в серии и не две подряд. */
+  const EXPLORE_RATE = 0.1;
   function newQuestion(s) {
-    // сначала — ловушка, в которую ученик только что попал; иначе — его частые ошибки из этой темы
-    const mine = Object.keys(L.get().mis).filter(k => T.MISCONCEPTIONS[k].home === s.topic).sort((a, b) => L.get().mis[b] - L.get().mis[a]);
-    s.q = T.nextQuestion(s.topic, L.topic(s.topic).seen, Math.random, s.lastMis ? [s.lastMis] : mine);
+    const explore = s.mode === 'practice' && s.n > 0 && !s.explore && A.enabled && A.user() && Math.random() < EXPLORE_RATE;
+    if (explore) {
+      const others = T.TOPICS.filter(x => x.id !== s.topic);
+      const topic = others[Math.floor(Math.random() * others.length)].id, bank = T.questionsByTopic[topic];
+      s.explore = topic;
+      s.q = bank[Math.floor(Math.random() * bank.length)];
+    } else {
+      s.explore = null;
+      // сначала — ловушка, в которую ученик только что попал; иначе — его частые ошибки из этой темы
+      const mine = Object.keys(L.get().mis).filter(k => T.MISCONCEPTIONS[k].home === s.topic).sort((a, b) => L.get().mis[b] - L.get().mis[a]);
+      s.q = T.nextQuestion(s.topic, L.topic(s.topic).seen, Math.random, s.lastMis ? [s.lastMis] : mine);
+    }
     s.opts = T.shuffle(s.q.options, Math.random);
     s.hints = 0; s.answered = null; s.flagged = null; s.ai = null; s.shown = Date.now();
   }
@@ -340,7 +353,7 @@
   }
 
   function renderSession() {
-    const s = ui.session, tp = T.TOPIC[s.topic], sol = T.solutionOf(s.q), a = s.answered;
+    const s = ui.session, tp = T.TOPIC[s.explore || s.topic], sol = T.solutionOf(s.q), a = s.answered;
     const practice = s.mode === 'practice';
     const progress = practice ? pips(s.mastered ? L.NEED : L.topic(s.topic).streak)
       : `<span class="muted">${t('Вопрос {a} из {b}', { a: Math.min(s.n + (a ? 0 : 1), L.CHECK_SIZE), b: L.CHECK_SIZE })}</span>`;
@@ -372,7 +385,8 @@
     app.innerHTML = `
       <section class="card narrow session">
         <div class="qmeta"><span class="chip">${esc(tp.title)}</span>${progress}</div>
-        <p class="why">${practice ? t('Практика: {n} верных подряд без подсказок — и тема освоена', { n: L.NEED }) : t('Проверка без подсказок: два вопроса')}</p>
+        <p class="why">${s.explore ? t('Случайная задача из другой темы. На прогресс не влияет — она помогает проверять, насколько точно Tamyr находит пробелы.')
+          : practice ? t('Практика: {n} верных подряд без подсказок — и тема освоена', { n: L.NEED }) : t('Проверка без подсказок: два вопроса')}</p>
         <h2 class="qtext">${math(s.q.text)}</h2>
         <div class="options">${s.opts.map((o, i) => `<button class="opt ${a && o.ok ? 'is-ok' : ''} ${a && a.idx === i && !o.ok ? 'is-bad' : ''}" data-i="${i}" ${a ? 'disabled' : ''}><span class="key">${'АБВГ'[i]}</span><span>${math(o.t)}</span></button>`).join('')}</div>
         ${a ? '' : `<div class="row">
@@ -388,9 +402,10 @@
       const opt = idx === null ? null : s.opts[idx];
       const ok = !!(opt && opt.ok);
       s.answered = { idx, ok, opt };
-      s.lastMis = !ok && opt && opt.mis ? opt.mis : null;
-      logAnswer(s.mode, s.topic, s.q, opt, s.hints, s.shown);
+      logAnswer(s.mode, s.explore || s.topic, s.q, opt, s.hints, s.shown, !!s.explore);
       s.n++;
+      if (s.explore) return renderSession(); // случайная задача: только в журнал, прогресс и серия не меняются
+      s.lastMis = !ok && opt && opt.mis ? opt.mis : null;
       if (ok) s.right++;
       s.flagged = L.recordAnswer(s.topic, s.q, ok ? null : opt);
       if (practice) {

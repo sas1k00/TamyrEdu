@@ -20,7 +20,8 @@ p.add_argument('--port', type=int, default=8772)
 p.add_argument('--confirm', action='store_true', help='требовать подтверждение почты')
 p.add_argument('--ttl', type=int, default=3600, help='срок жизни токена, секунды')
 p.add_argument('--teachers', default='', help='почты учителей через запятую')
-p.add_argument('--old-answers', action='store_true', help='таблица answers без столбца recall (как до перевыполнения answers.sql)')
+p.add_argument('--old-answers', action='store_true', help='таблица answers без новых столбцов recall/explore/engine (как до перевыполнения answers.sql)')
+p.add_argument('--no-mock', action='store_true', help='таблиц пробного ЕНТ нет (supabase/mock.sql не выполнен)')
 ARGS = p.parse_args()
 TEACHERS = {e.strip().lower() for e in ARGS.teachers.split(',') if e.strip()}
 
@@ -32,6 +33,7 @@ AI_USED = {}    # (user_id, день) -> сколько объяснений И�
 ANSWERS = []    # журнал ответов: как public.answers, но в памяти
 CLASSES = {}    # id -> {id, teacher_id, name, code, created_at}; как supabase/classes.sql
 MEMBERS = []    # {class_id, user_id, student_name, joined_at}
+MOCKS = {}      # id -> {id, class_id, name, taken_on, topics, results: {user_id: [номера]}}; как supabase/mock.sql
 AI_LIMIT = 20
 VERIFY = {}     # одноразовый токен из письма -> (user_id, kind, redirect)
 
@@ -281,17 +283,46 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/rest/v1/answers':
             if method == 'POST':
                 rows = self.body()
-                if ARGS.old_answers and any('recall' in r for r in rows if isinstance(r, dict)):
+                if ARGS.old_answers and any(k in r for r in rows if isinstance(r, dict) for k in ('recall', 'explore', 'engine')):
                     return self.send(400, {'code': 'PGRST204', 'message': "Could not find the 'recall' column of 'answers' in the schema cache"})
                 if not isinstance(rows, list) or any(not isinstance(r, dict) or r.get('mode') not in ('diag', 'practice', 'check') for r in rows):
                     return self.send(400, {'code': '23514', 'message': 'new row violates check constraint'})
                 ANSWERS.extend(dict(r, user_id=user['id']) for r in rows)
-                print('[answers] +%d (всего %d)' % (len(rows), len(ANSWERS)), flush=True)
+                print('[answers] +%d (всего %d, случайных %d)' % (len(rows), len(ANSWERS), sum(1 for r in ANSWERS if r.get('explore'))), flush=True)
                 return self.send(201)
             if method == 'GET':   # как RLS: только свои
                 return self.send(200, [r for r in ANSWERS if r['user_id'] == user['id']])
             if method == 'DELETE':
                 ANSWERS[:] = [r for r in ANSWERS if r['user_id'] != user['id']]
+                return self.send(204)
+
+        # --- пробный ЕНТ: те же правила, что в supabase/mock.sql (только учитель класса) ---
+        if not ARGS.no_mock and path == '/rest/v1/rpc/save_mock_test' and method == 'POST':
+            b = self.body()
+            cid, topics, results = b.get('p_class'), b.get('p_topics'), b.get('p_results')
+            if not is_teacher or cid not in taught:
+                return self.send(400, {'code': 'P0001', 'message': 'not your class'})
+            if not isinstance(topics, list) or not 1 <= len(topics) <= 80 or not isinstance(results, dict):
+                return self.send(400, {'code': 'P0001', 'message': 'bad topics'})
+            tid = b.get('p_id') or str(uuid.uuid4())
+            if b.get('p_id') and (tid not in MOCKS or MOCKS[tid]['class_id'] != cid):
+                return self.send(400, {'code': 'P0001', 'message': 'no such test'})
+            members = {m['user_id'] for m in MEMBERS if m['class_id'] == cid}
+            MOCKS[tid] = {'id': tid, 'class_id': cid, 'name': str(b.get('p_name', ''))[:60], 'taken_on': b.get('p_taken'), 'topics': topics,
+                          'results': {u: sorted({int(x) for x in w if 1 <= int(x) <= len(topics)}) for u, w in results.items() if u in members}}
+            print('[mock] %s: %d учеников' % (MOCKS[tid]['name'], len(MOCKS[tid]['results'])), flush=True)
+            return self.send(200, tid)
+        if not ARGS.no_mock and path == '/rest/v1/mock_tests':
+            visible = [m for m in MOCKS.values() if is_teacher and m['class_id'] in taught]
+            if method == 'GET':
+                cid = q.get('class_id', '').replace('eq.', '', 1)
+                rows = sorted((m for m in visible if m['class_id'] == cid), key=lambda m: m['taken_on'] or '')
+                return self.send(200, [dict({k: m[k] for k in ('id', 'name', 'taken_on', 'topics')},
+                                            mock_results=[{'user_id': u, 'wrong': w} for u, w in m['results'].items()]) for m in rows])
+            if method == 'DELETE':
+                mid = q.get('id', '').replace('eq.', '', 1)
+                if any(m['id'] == mid for m in visible):
+                    MOCKS.pop(mid, None)
                 return self.send(204)
 
         if path == '/functions/v1/explain' and method == 'POST':

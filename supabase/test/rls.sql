@@ -113,3 +113,33 @@ reset role; set role anon;
 select public._try($$insert into public.answers (mode, topic, question, correct) values ('diag', 'x', 'y', true)$$) || ' (гость)';
 reset role;
 select 'выгрузка: ' || student || ' ' || topic from public.answers_export;
+
+\echo '16. пробный ЕНТ: учитель сохраняет результаты своего класса; чужие ученики и неверные номера отбрасываются'
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a"}', false); set role authenticated;
+select public.create_class('11 «Б»') ->> 'name'; reset role;
+select id as cls, code as code2 from public.classes where name = '11 «Б»' \gset
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b"}', false); set role authenticated;
+select public.join_class(:'code2') ->> 'name'; reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a"}', false); set role authenticated;
+select public.save_mock_test(null, :'cls', 'Пробный ЕНТ 1', '2026-11-16', array['frac','frac','pct',''],
+  jsonb_build_object(:'A', jsonb_build_array(2, 2, 3, 9, 'x'), :'N', jsonb_build_array(1))) is not null as saved;
+select 'ученики в результатах: ' || count(*) || ', ошибки Айгерим: ' || (select wrong::text from public.mock_results) from public.mock_results;
+select public._try($$insert into public.mock_results (test_id, user_id) select id, '00000000-0000-0000-0000-00000000000c' from public.mock_tests$$) || ' (писать напрямую)';
+reset role;
+select 'выгрузка: ' || string_agg(topic || ' ' || wrong || '/' || questions, ', ' order by topic) from public.mock_export;
+
+\echo '17. пробный ЕНТ: ученик, другой учитель и гость не видят; чужой класс сохранить нельзя'
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b"}', false); set role authenticated;
+select 'Айгерим: работ ' || (select count(*) from public.mock_tests) || ', результатов ' || count(*) from public.mock_results; reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000d"}', false); set role authenticated;
+select 'другой учитель: работ ' || (select count(*) from public.mock_tests) || ', результатов ' || count(*) from public.mock_results;
+select public._try(format($$select public.save_mock_test(null, %L, 'x', '2026-11-16', array['frac'], '{}')$$, :'cls')) || ' (чужой класс)';
+reset role; set role anon;
+select public._try($$select * from public.mock_tests$$) || ' (гость)';
+reset role;
+
+\echo '18. роль учителя снята — пробные ЕНТ скрыты сразу'
+select public.set_teacher('teacher@school.kz', false);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a"}', false); set role authenticated;
+select 'работ: ' || count(*) from public.mock_tests; reset role;
+select public.set_teacher('teacher@school.kz');

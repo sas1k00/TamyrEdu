@@ -14,6 +14,9 @@
 
   const S = { UNKNOWN: 'unknown', MASTERED: 'mastered', INFERRED: 'inferred', GAP: 'gap', RISK: 'risk' };
   T.STATUS = S;
+  // Версия алгоритма — пишется в журнал ответов с каждым ответом. Менять при любом изменении диагностики,
+  // выбора задач в практике или параметров FSRS: иначе в данных не отличить ответы старого и нового движка.
+  T.ENGINE = '2026.10.30';
 
   function byId(list) { const m = {}; list.forEach(x => { m[x.id] = x; }); return m; }
   const TOPIC = byId(T.TOPICS);
