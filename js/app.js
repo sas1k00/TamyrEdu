@@ -112,6 +112,7 @@
       <section class="card narrow">
         <h1>${t('С чего начнём?')}</h1>
         <p class="muted">${t('Диагностика — от нескольких вопросов до нескольких десятков: чем больше пробелов, тем глубже спускаемся. Её можно остановить в любой момент — план построится по тому, что уже известно. Не знаешь ответ — жми «Не знаю»: угадывание портит карту.')}</p>
+        ${pendingDiag() ? `<div class="banner resume"><span>${t('Есть незаконченная диагностика: отвечено вопросов — {n}. Новая диагностика её заменит.', { n: ui.diag.log.length })}</span><a class="btn small primary" href="#quiz">${t('Продолжить диагностику')}</a></div>` : ''}
         ${L.exists() ? `<p class="note">${t('Новая диагностика заменит текущий прогресс.')}</p>` : ''}
         <form id="start-form">
           <label class="field"><span>${t('Имя')}</span><input id="name" required maxlength="40" autocomplete="given-name" value="${esc(ui.name || (L.exists() ? L.get().name : A.user() ? A.user().name : ''))}" placeholder="${t('Например, Айгерим')}"></label>
@@ -126,13 +127,17 @@
       e.preventDefault();
       ui.name = app.querySelector('#name').value.trim() || t('Ученик');
       ui.goal = app.querySelector('input[name=goal]:checked').value;
+      clearDiag(); // новая диагностика (или старт без неё) заменяет незаконченную
       if (ui.goal === 'none') {
         L.startBlank(ui.name);
         ui.banner = t('Начинаем с основ. Каждую тему сначала проверим двумя задачами: знаешь — идём выше, нет — разберём.');
         location.hash = '#home';
         return;
       }
-      ui.diag = new T.Diagnostic(T.GOALS.find(g => g.id === ui.goal).start);
+      const seed = Math.floor(Math.random() * 2147483647);
+      ui.diag = new T.Diagnostic(T.GOALS.find(g => g.id === ui.goal).start, { rand: T.rng(seed) });
+      ui.diagRun = { goal: ui.goal, name: ui.name, seed, answers: [] };
+      saveDiag();
       location.hash = '#quiz';
     });
   }
@@ -147,8 +152,42 @@
     return '';
   }
 
+  /* Незаконченная диагностика хранится на устройстве: ушёл на «Карту», обновил страницу, закрыл вкладку —
+     продолжаешь с того же вопроса. Храним не состояние движка, а зерно случайности и ответы: при открытии
+     диагностика проигрывается заново и приходит ровно к тому же вопросу. Не совпал вопрос (банк изменился) — начинаем заново. */
+  const DIAG_KEY = (T.LEARNER_KEY || 'tamyr.academy.v1') + '.diag';
+  function saveDiag() {
+    try { localStorage.setItem(DIAG_KEY, JSON.stringify(ui.diagRun)); } catch (e) { /* нет хранилища — диагностика живёт до перезагрузки */ }
+  }
+  function clearDiag() {
+    ui.diag = null; ui.diagRun = null;
+    try { localStorage.removeItem(DIAG_KEY); } catch (e) { /* нечего удалять */ }
+  }
+  function loadDiag() {
+    if (ui.diag) return ui.diag;
+    let run = null;
+    try { run = JSON.parse(localStorage.getItem(DIAG_KEY) || 'null'); } catch (e) { run = null; }
+    const goal = run && T.GOALS.find(g => g.id === run.goal);
+    if (!goal || !Array.isArray(run.answers) || !Number.isInteger(run.seed)) return null;
+    const d = new T.Diagnostic(goal.start, { rand: T.rng(run.seed) });
+    for (const a of run.answers) {
+      const cur = d.next();
+      if (!cur || !a || cur.question.id !== a.q || !(a.i === null || (Number.isInteger(a.i) && a.i >= 0 && a.i < cur.options.length))) { clearDiag(); return null; }
+      d.answer(a.i);
+    }
+    ui.diag = d; ui.diagRun = run; ui.goal = run.goal; ui.name = run.name;
+    return d;
+  }
+  // есть начатая диагностика хотя бы с одним ответом — её стоит предложить продолжить
+  const pendingDiag = () => { const d = loadDiag(); return d && d.log.length ? d : null; };
+  function resumeBanner() {
+    const d = pendingDiag();
+    if (!d) return;
+    app.insertAdjacentHTML('afterbegin', `<div class="banner resume"><span>${t('Диагностика не закончена: отвечено вопросов — {n}. Можно продолжить с того же места.', { n: d.log.length })}</span><a class="btn small primary" href="#quiz">${t('Продолжить диагностику')}</a></div>`);
+  }
+
   function viewQuiz() {
-    const d = ui.diag;
+    const d = loadDiag();
     if (!d) { location.hash = '#start'; return; }
     const cur = d.next();
     if (!cur) return finishDiagnostic();
@@ -178,7 +217,10 @@
     app.querySelectorAll('[data-i]').forEach(b => b.addEventListener('click', () => {
       const opt = b.dataset.i === 'skip' ? null : cur.options[Number(b.dataset.i)];
       logAnswer('diag', cur.topic, cur.question, opt, 0, shown);
-      d.answer(b.dataset.i === 'skip' ? null : Number(b.dataset.i));
+      const idx = b.dataset.i === 'skip' ? null : Number(b.dataset.i);
+      d.answer(idx);
+      ui.diagRun.answers.push({ q: cur.question.id, i: idx });
+      saveDiag();
       viewQuiz();
     }));
     const stop = app.querySelector('#stop');
@@ -197,7 +239,7 @@
   function finishDiagnostic() {
     const res = ui.diag.result();
     L.fromDiagnostic(ui.name, res);
-    ui.diag = null;
+    clearDiag();
     const q = questions(res.asked);
     ui.banner = res.rootGaps.length
       ? t('Диагностика готова: {q}. {rw} — <b>{roots}</b>. Начинаем снизу: пока корень не закрыт, темы выше будут сыпаться.',
@@ -603,7 +645,7 @@
       if (!ui.confirmReset) { ui.confirmReset = true; return viewProgress(); }
       ui.confirmReset = false;
       if (A.user()) A.clearRemote().catch(() => {}); // иначе при следующей сверке прогресс вернётся из облака
-      L.reset(); location.hash = '#home';
+      L.reset(); clearDiag(); location.hash = '#home';
     });
   }
 
@@ -662,6 +704,7 @@
     await A.signOut();
     // Прогресс аккаунта с устройства убираем. Если последние изменения не дошли до облака — оставляем, чтобы не потерять.
     if (own && saved) L.forget();
+    clearDiag(); // незаконченная диагностика — того, кто вышел; следующему на этом телефоне она не нужна
     ui.auth = { mode: 'in', email: '', error: null, note: null, busy: false };
     if (own && !saved) ui.banner = t('Не удалось сохранить последние изменения в облаке, поэтому прогресс оставлен на этом устройстве.');
     go(L.exists() ? '#home' : '#account');
@@ -929,13 +972,14 @@
       history.replaceState(null, '', '#account');
       return route();
     }
-    if (view === 'account') return viewAccount();
-    if (view === 'map') return viewMap();
-    if (!L.exists()) return viewLanding();
+    if (view === 'account') { viewAccount(); return resumeBanner(); }
+    if (view === 'map') { viewMap(); return resumeBanner(); }
+    if (!L.exists()) { viewLanding(); return resumeBanner(); }
     if (view === 'lesson' && known(arg)) return viewLesson(arg, true);
     if ((view === 'practice' || view === 'check') && known(arg)) return viewSession(view, arg);
-    if (view === 'progress') return viewProgress();
+    if (view === 'progress') { viewProgress(); return resumeBanner(); }
     viewHome();
+    resumeBanner();
   }
   // Клавиши 1–4 выбирают вариант ответа
   document.addEventListener('keydown', e => {
