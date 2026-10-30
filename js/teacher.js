@@ -142,6 +142,32 @@
     });
   }
 
+  /* «Что сделать на этой неделе»: 2–4 конкретных шага для учителя из данных класса.
+     Активность (кто давно не занимался, кто не начал) есть только у настоящего класса из облака. */
+  function actions(rows, rootsSorted, misSorted) {
+    const n = rows.length, out = [];
+    const names = list => list.slice(0, 6).map(esc).join(', ') + (list.length > 6 ? ' ' + t('и ещё {n}', { n: list.length - 6 }) : '');
+    if (rootsSorted.length && rootsSorted[0][1] >= Math.max(2, Math.ceil(n * 0.2))) {
+      const [id, c] = rootsSorted[0];
+      out.push({ icon: '🎯', text: t('Разобрать у доски «{topic}»: пробел у {c} из {n} учеников.', { topic: esc(title(id)), c, n }), sub: esc(T.TOPIC[id].rule) });
+    }
+    if (misSorted.length && misSorted[0][1] >= 2) {
+      const m = T.MISCONCEPTIONS[misSorted[0][0]];
+      out.push({ icon: '⚠️', text: t('Показать классу типичную ошибку: «{mis}» — у {c} учеников.', { mis: esc(m.title), c: misSorted[0][1] }), sub: esc(m.fix) });
+    }
+    const sel = cloud() && cls.sel && cls.data[cls.sel];
+    if (sel) {
+      const members = cls.members.filter(m => m.class_id === cls.sel);
+      const nameOf = m => m.student_name || (sel[m.user_id] && sel[m.user_id].state && sel[m.user_id].state.name) || t('Без имени');
+      const idle = members.filter(m => sel[m.user_id] && Date.now() - Date.parse(sel[m.user_id].updated_at) > 3 * 86400000).map(nameOf);
+      const fresh = members.filter(m => !sel[m.user_id]).map(nameOf);
+      if (idle.length) out.push({ icon: '⏰', text: t('Не занимались 3 дня и больше: {names}. Стоит напомнить.', { names: names(idle) }) });
+      if (fresh.length) out.push({ icon: '🚀', text: t('Ещё не прошли диагностику: {names}.', { names: names(fresh) }) });
+    }
+    if (!out.length && n) out.push({ icon: '✅', text: t('Общих пробелов нет — класс в хорошей форме. Дайте задания на повторение.') });
+    return out;
+  }
+
   function roster() {
     return (showDemo ? demoClass() : []).concat(classRows(), T.store.imported()).map(c => Object.assign(T.store.expand(c), { demo: !!c.demo }));
   }
@@ -149,7 +175,9 @@
   function csv(rows) {
     const head = [T.t('Ученик')].concat(T.TOPICS.map(t => t.title), [T.t('Корневые пробелы'), T.t('Вопросов')]);
     const lines = [head].concat(rows.map(r => [r.name].concat(T.TOPICS.map(t => r.status[t.id]), [r.rootGaps.map(title).join('; '), r.asked])));
-    return '﻿' + lines.map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n');
+    // имена пишут сами ученики: «=…», «+…», «-…», «@…» Excel принял бы за формулу — экранируем апострофом
+    const cell = v => { const s = String(v); return `"${(/^[=+\-@\t\r]/.test(s) ? "'" + s : s).replace(/"/g, '""')}"`; };
+    return '﻿' + lines.map(l => l.map(cell).join(';')).join('\n');
   }
 
   T.viewTeacher = function (app) {
@@ -167,6 +195,7 @@
     const avgAsked = n ? Math.round(rows.reduce((s, r) => s + r.asked, 0) / n) : 0;
     const clean = rows.filter(r => !r.rootGaps.length).length;
     const maxRoot = rootsSorted.length ? rootsSorted[0][1] : 1;
+    const todo = actions(rows, rootsSorted, misSorted);
 
     app.innerHTML = `
       <section class="result-head">
@@ -190,6 +219,7 @@
         </details>
         <button class="btn small" id="csv" ${n ? '' : 'disabled'}>${T.t('Скачать CSV')}</button>
       </section>
+      ${todo.length ? `<section class="card todo"><h2>${t('Что сделать на этой неделе')}</h2><ul class="todo-list">${todo.map(a => `<li><span class="todo-i" aria-hidden="true">${a.icon}</span><div><p>${a.text}</p>${a.sub ? `<p class="muted small">${a.sub}</p>` : ''}</div></li>`).join('')}</ul></section>` : ''}
       ${n ? `
       <section class="grid2">
         <div class="card">

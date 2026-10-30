@@ -143,6 +143,7 @@
     if (r.kind === 'goal') return t('Целевая тема');
     if (r.kind === 'prereq') return t('Проверяем основу темы «{topic}»', { topic: title(r.from) });
     if (r.kind === 'mis') return t('Твой ответ в теме «{topic}» похож на ошибку из этой темы', { topic: title(r.from) });
+    if (r.kind === 'verify') return t('Похоже, пробел здесь — проверим ещё раз, чтобы не ошибиться');
     return '';
   }
 
@@ -186,8 +187,11 @@
 
   /* Один ответ — в журнал (только у вошедших). choice — номер варианта в банке, а не на экране: так ответы сравнимы между учениками. */
   function logAnswer(mode, topic, q, opt, hints, shown) {
+    // в повторениях пишем и прогноз FSRS «вспомнит ли» — по нему потом проверим, насколько модель точна для наших учеников
+    const r = mode === 'check' && L.exists() ? T.fsrs.retrievability(L.topic(topic).fs, L.now()) : null;
     A.logAnswer({ mode, topic, question: q.gen ? 'gen:' + topic : q.id, choice: opt ? q.options.indexOf(opt) : null,
-      correct: !!(opt && opt.ok), mis: opt && opt.mis ? opt.mis : null, hints, ms: Math.min(3600000, Date.now() - shown) });
+      correct: !!(opt && opt.ok), mis: opt && opt.mis ? opt.mis : null, hints, ms: Math.min(3600000, Date.now() - shown),
+      recall: r === null ? null : Math.round(r * 1000) / 1000 });
   }
 
   function finishDiagnostic() {
@@ -210,6 +214,13 @@
       <div><b>${c.done}<small>/${T.TOPICS.length}</small></b><span>${t('тем освоено')}</span></div>
       <div><b>${s}</b><span>${t('{d} подряд', { d: plural(s, 'день', 'дня', 'дней') })}</span></div>
     </div>`;
+  }
+
+  /* Цель дня: полоска «решено задач сегодня». Выполнил — поздравляем, но не заставляем продолжать. */
+  function goalHtml() {
+    const g = L.goal(), pc = Math.min(100, Math.round(100 * g.done / g.need)), ok = g.done >= g.need;
+    return `<div class="daygoal${ok ? ' ok' : ''}"><div class="goal-top"><span>${ok ? t('Цель дня выполнена ✓') : t('Цель дня')}</span><b>${t('{a} из {b} задач', { a: g.done, b: g.need })}</b></div>
+      <span class="goal-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${g.need}" aria-valuenow="${Math.min(g.done, g.need)}"><i style="width:${pc}%"></i></span></div>`;
   }
 
   function viewHome() {
@@ -246,6 +257,7 @@
         <div class="col">
         <div class="card">
           <h2>${t('План на сегодня')} ${tasks.length ? `<span class="muted small">≈ ${total} ${t('мин')}</span>` : ''}</h2>
+          ${goalHtml()}
           ${tasks.length ? `<ol class="tasks">${tasks.map((task, i) => {
             const [label, why] = taskText(task);
             return `
@@ -308,7 +320,9 @@
 
   /* ---------- Практика и проверка ---------- */
   function newQuestion(s) {
-    s.q = T.nextQuestion(s.topic, L.topic(s.topic).seen);
+    // сначала — ловушка, в которую ученик только что попал; иначе — его частые ошибки из этой темы
+    const mine = Object.keys(L.get().mis).filter(k => T.MISCONCEPTIONS[k].home === s.topic).sort((a, b) => L.get().mis[b] - L.get().mis[a]);
+    s.q = T.nextQuestion(s.topic, L.topic(s.topic).seen, Math.random, s.lastMis ? [s.lastMis] : mine);
     s.opts = T.shuffle(s.q.options, Math.random);
     s.hints = 0; s.answered = null; s.flagged = null; s.ai = null; s.shown = Date.now();
   }
@@ -374,6 +388,7 @@
       const opt = idx === null ? null : s.opts[idx];
       const ok = !!(opt && opt.ok);
       s.answered = { idx, ok, opt };
+      s.lastMis = !ok && opt && opt.mis ? opt.mis : null;
       logAnswer(s.mode, s.topic, s.q, opt, s.hints, s.shown);
       s.n++;
       if (ok) s.right++;

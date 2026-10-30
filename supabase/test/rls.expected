@@ -1,0 +1,55 @@
+1. ученик пытается сделать себя учителем
+denied: permission denied for function set_teacher
+2. до выдачи роли учитель не может создать класс
+denied: only teachers can create classes
+Готово: teacher@school.kz — учитель
+Готово: other.teacher@school.kz — учитель
+Аккаунт nobody@x.kz не найден: пусть человек сначала зарегистрируется на сайте
+3. учитель создаёт класс
+t
+4. ученики сохраняют прогресс
+5. до вступления учитель не видит ничьего прогресса (ожидаем 0)
+0
+6. Айгерим вступает: код строчными с дефисом; неверный код → null
+11 «А»
+null
+Айгерим видит свои классы: 11 «А»
+Айгерим видит участников: 1
+7. учитель видит прогресс только Айгерим; изменить его не может
+Айгерим
+имя в классе: Айгерим
+denied: permission denied for table class_members
+прогресс Айгерим не изменён: Айгерим
+8. Нурлан: не видит классов, чужого прогресса, не может вступить напрямую
+классы: 0
+прогресс: Нурлан
+denied: permission denied for table class_members
+9. другой учитель не видит ни класса, ни Айгерим
+классы: 0, прогресс: 0
+ok (удалить чужой класс)
+класс на месте: 1
+10. роль снята — доступ к прогрессу пропал сразу
+Готово: teacher@school.kz больше не учитель
+прогресс: 0
+Готово: teacher@school.kz — учитель
+11. Айгерим выходит из класса — учитель больше не видит
+прогресс: 0
+12. учитель убирает ученика и удаляет класс
+11 «А»
+убран: 1
+удалён класс: 1
+13. гость (anon) ничего не может
+denied: permission denied for function join_class
+denied: permission denied for function create_class
+denied: permission denied for table progress
+denied: permission denied for table classes
+14. лимит ИИ (лимит 2): true, true, false
+t
+t
+f
+denied: permission denied for table ai_usage (таблицу лимита читать нельзя)
+15. журнал ответов: свой пишется, чужой не виден, гостю нельзя
+Нурлан видит ответов: 0
+denied: new row violates row-level security policy for table "answers" (записать за другого)
+denied: permission denied for table answers (гость)
+выгрузка: 69e2703f4b frac

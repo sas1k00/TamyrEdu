@@ -74,6 +74,7 @@
       this.log = [];       // полная история: {qid, topic, correct, mis}
       this.current = null; // {topic, question, options}
       this.reasons = {};   // почему тема попала в проверку
+      this.need = {};      // тема → какой перевес неверных нужен для пробела (по умолчанию 2; у перепроверяемых корней — 3)
       startTopics.forEach(id => { this.reasons[id] = { kind: 'goal' }; });
     }
 
@@ -85,7 +86,23 @@
         if (this._decided(id)) { this.stack.pop(); continue; }
         return id;
       }
-      return null;
+      return this._verifyRoots();
+    }
+
+    /* Перед итогом корни с узким перевесом (2 неверных) перепроверяем до перевеса 3: две случайные ошибки
+       знающего ученика иначе становятся ложным корнем. На симуляции 1000 учеников это +1,5–5 п.п. точных
+       диагнозов ценой ~1,3 вопроса (tests.html, «Симуляция»). Каждый корень перепроверяется не больше одного раза. */
+    _verifyRoots() {
+      const gaps = T.TOPICS.filter(t => this.state[t.id].status === S.GAP).map(t => t.id);
+      const gapSet = new Set(gaps);
+      const weak = gaps.filter(g => {
+        if (this.need[g] || [...ancestors(g)].some(a => gapSet.has(a))) return false; // уже перепроверен или не корень
+        const st = this.state[g], c = st.answers.filter(a => a.correct).length;
+        return st.answers.length - c < 3 && st.answers.length < Math.min(this.maxPerTopic, questionsByTopic[g].length);
+      });
+      if (!weak.length) return null;
+      weak.forEach(g => { this.need[g] = 3; this.state[g].status = S.UNKNOWN; this.stack.push(g); this.reasons[g] = { kind: 'verify' }; });
+      return this.stack[this.stack.length - 1];
     }
 
     next() {
@@ -126,7 +143,7 @@
       // «Чистое» освоение (все ответы верны) распространяется на пререквизиты;
       // освоение с ошибкой засчитывается только самой теме — угадывание не должно «закрывать» основы.
       if (c - w >= 2 || (outOfQuestions && c > w)) return this._markMastered(id, w === 0);
-      if (w - c >= 2 || outOfQuestions) return this._markGap(id);
+      if (w - c >= (this.need[id] || 2) || outOfQuestions) return this._markGap(id);
     }
 
     _markMastered(id, propagate) {

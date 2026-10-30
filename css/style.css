@@ -463,6 +463,23 @@ sup { font-size: .7em; }
   100% { opacity: 0; transform: translate(var(--x), calc(var(--y) + 420px)) rotate(var(--r)); }
 }
 
+/* Что сделать на этой неделе */
+.todo { border-left: 4px solid var(--accent); }
+.todo-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.todo-list li { display: flex; gap: 14px; align-items: flex-start; }
+.todo-list p { margin: 0; }
+.todo-list p + p { margin-top: 2px; }
+.todo-i { font-size: 1.3rem; line-height: 1.4; flex: none; }
+
+/* Цель дня */
+.daygoal { background: var(--surface-2); border-radius: 14px; padding: 12px 14px; margin: 4px 0 14px; }
+.goal-top { display: flex; justify-content: space-between; gap: 12px; font-size: .92rem; margin-bottom: 8px; color: var(--ink-2); }
+.goal-top b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.goal-bar { display: block; height: 10px; border-radius: 5px; background: var(--surface); overflow: hidden; }
+.goal-bar i { display: block; height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--accent-2), var(--accent)); transition: width .6s var(--ease); }
+.daygoal.ok { background: var(--ok-soft); }
+.daygoal.ok .goal-top span { color: var(--ok); font-weight: 700; }
+
 /* Классы */
 .cls-head { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .cls-head h2 { margin: 0; }

@@ -331,10 +331,14 @@
   T.solutionOf = q => q.sol || T.SOLUTIONS[q.id] || [];
 
   /* Следующая задача по теме: сначала невиданные из банка, потом генератор (если есть), потом банк по кругу. */
-  T.nextQuestion = function (topicId, seenIds, rand) {
+  /* preferMis — типичные ошибки этого ученика: чаще даём задачу, где среди вариантов есть та же ловушка,
+     чтобы он встретил свою ошибку снова и показал, что разобрался. */
+  T.nextQuestion = function (topicId, seenIds, rand, preferMis) {
     rand = rand || Math.random;
     const seen = new Set(seenIds || []);
     const fresh = T.questionsByTopic[topicId].filter(q => !seen.has(q.id));
+    const trap = preferMis && preferMis.length ? fresh.filter(q => q.options.some(o => o.mis && preferMis.includes(o.mis))) : [];
+    if (trap.length && rand() < 0.75) return trap[Math.floor(rand() * trap.length)];
     const gen = T.GENERATORS[topicId];
     if (fresh.length && !(gen && rand() < 0.4)) return fresh[Math.floor(rand() * fresh.length)];
     if (gen) return gen(rand);
