@@ -59,3 +59,22 @@ select count(*) filter (where mode = 'check')                      as check_answ
        count(*) filter (where mode = 'check') / 2                  as reviews_approx,
        count(distinct user_id) filter (where mode = 'check')       as students
 from public.answers;
+
+-- 7. Диагностика против пробного ЕНТ (нужен supabase/mock.sql и введённые учителем результаты).
+-- Вердикт Tamyr — итог последней диагностики ученика (state.diag.status), ЕНТ — ошибся ли он хотя бы в одном вопросе темы.
+-- Хорошая диагностика: у «gap» (пробел) доля ошибок на ЕНТ высокая, у «mastered» (знает) — низкая.
+-- Сравнивать честно, когда диагностика и пробный ЕНТ прошли в одну неделю (неделя 0 пилота).
+with d as (
+  select p.user_id, s.key as topic, s.value as verdict
+  from public.progress p, jsonb_each_text(p.state -> 'diag' -> 'status') s
+), e as (
+  select r.user_id, m.topics[i] as topic, bool_or(i = any (r.wrong)) as ent_wrong
+  from public.mock_results r
+  join public.mock_tests m on m.id = r.test_id
+  cross join lateral generate_subscripts(m.topics, 1) as i
+  where m.topics[i] <> ''
+  group by 1, 2
+)
+select d.verdict, count(*) as n, round(avg(e.ent_wrong::int) * 100) as ent_wrong_pct
+from d join e using (user_id, topic)
+group by 1 order by 3 desc;

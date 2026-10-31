@@ -47,6 +47,114 @@
     const rows = await A.classes.progressOf(ids);
     cls.data[id] = {};
     (rows || []).forEach(r => { cls.data[id][r.user_id] = r; });
+    await loadMock(id);
+  }
+
+  /* ---------- Пробный ЕНТ (supabase/mock.sql) ----------
+     Учитель вносит, в каких вопросах ошибся каждый ученик: с этим потом сверяется диагностика Tamyr. */
+  const mock = { classId: null, list: [], missing: false, error: null, open: false, form: null, confirm: null, note: null };
+  async function loadMock(id) {
+    mock.classId = id; mock.missing = false; mock.error = null;
+    try { mock.list = (await A.mock.list(id)) || []; }
+    catch (e) { mock.list = []; if (e.status === 404) mock.missing = true; else mock.error = t('Не удалось загрузить пробные ЕНТ.'); }
+  }
+
+  /* «3, 7, 12-14» → [3, 7, 12, 13, 14]; «0» → [] (без ошибок); пусто → null (не писал). Ошибка — { bad: true }. */
+  T.parseMockWrong = function (text, n) {
+    const s = String(text || '').trim();
+    if (!s) return null;
+    if (s === '0') return [];
+    const out = new Set();
+    for (const part of s.replace(/\s*[-–]\s*/g, '-').split(/[\s,;]+/).filter(Boolean)) {
+      const m = part.match(/^(\d{1,2})(?:[-–](\d{1,2}))?$/);
+      if (!m) return { bad: true };
+      const a = Number(m[1]), b = m[2] ? Number(m[2]) : a;
+      if (a < 1 || b < a || b > n) return { bad: true };
+      for (let i = a; i <= b; i++) out.add(i);
+    }
+    return [...out].sort((x, y) => x - y);
+  };
+
+  const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  function mockForm(test) {
+    if (!test) return { id: null, name: '', taken: today(), topics: Array(40).fill(''), wrong: {} };
+    const wrong = {};
+    (test.mock_results || []).forEach(r => { wrong[r.user_id] = r.wrong.length ? r.wrong.join(', ') : '0'; });
+    return { id: test.id, name: test.name, taken: test.taken_on, topics: test.topics.slice(), wrong };
+  }
+
+  function mockHtml(members, data) {
+    if (mock.classId !== cls.sel) return '';
+    const f = mock.form;
+    const nameOf = m => m.student_name || (data[m.user_id] && data[m.user_id].state && data[m.user_id].state.name) || t('Без имени');
+    const topicOpts = T.TOPICS.map(x => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join('');
+    const form = f ? `<div class="mock-form">
+        <div class="mock-meta">
+          <label>${t('Название')}<input id="mock-name" maxlength="60" value="${esc(f.name)}" placeholder="${t('Например, пробный ЕНТ, ноябрь')}"></label>
+          <label>${t('Дата')}<input id="mock-date" type="date" value="${esc(f.taken)}"></label>
+          <label>${t('Вопросов')}<input id="mock-n" type="number" min="1" max="80" value="${f.topics.length}"></label>
+        </div>
+        <h3>${t('1. Тема каждого вопроса')}</h3>
+        <p class="muted small">${t('Один раз на вариант. Если такой темы нет в Tamyr, оставьте «—».')}</p>
+        <div class="mock-topics">${f.topics.map((id, i) => `<label><span>${i + 1}</span><select data-mt="${i}" aria-label="${t('Вопрос {n}', { n: i + 1 })}"><option value="">—</option>${topicOpts.replace(`value="${esc(id)}"`, `value="${esc(id)}" selected`)}</select></label>`).join('')}</div>
+        <h3>${t('2. Ошибки учеников')}</h3>
+        <p class="muted small">${t('Номера вопросов с ошибкой через запятую, можно диапазоном: 3, 7, 12-14. «0» — без ошибок. Пусто — не писал.')}</p>
+        ${members.length ? `<div class="mock-students">${members.map(m => `<label><span>${esc(nameOf(m))}</span><input data-mw="${esc(m.user_id)}" value="${esc(f.wrong[m.user_id] || '')}" inputmode="numeric" placeholder="3, 7, 12-14"></label>`).join('')}</div>`
+          : `<p class="muted small">${t('Сначала ученики должны вступить в класс.')}</p>`}
+        ${mock.note ? `<p class="bad-msg small" role="alert">${esc(mock.note)}</p>` : ''}
+        <div class="row"><button class="btn small primary" id="mock-save">${t('Сохранить')}</button><button class="btn small ghost" id="mock-cancel">${t('Отмена')}</button></div>
+      </div>` : '';
+    return `<details class="cls-members cls-mock"${mock.open ? ' open' : ''}><summary>${t('Пробный ЕНТ')} (${mock.list.length})</summary>
+      <p class="muted small">${t('Внесите, в каких вопросах ошибся каждый ученик: так проверяется, правильно ли Tamyr находит пробелы. Ученики этих данных не видят.')}</p>
+      ${mock.missing ? `<p class="bad-msg small">${t('В базе ещё нет таблиц пробного ЕНТ: выполните supabase/mock.sql в Supabase.')}</p>` : ''}
+      ${mock.error ? `<p class="bad-msg small" role="alert">${esc(mock.error)}</p>` : ''}
+      ${mock.list.length ? `<ul>${mock.list.map(x => `<li><span>${esc(x.name)} <span class="muted small">· ${esc(x.taken_on)} · ${(x.mock_results || []).length} ${t('уч.')}</span></span>
+        <span><button class="link small" data-mock-edit="${esc(x.id)}">${t('Изменить')}</button> <button class="link small" data-mock-drop="${esc(x.id)}">${mock.confirm === x.id ? t('Точно удалить?') : t('Удалить')}</button></span></li>`).join('')}</ul>` : ''}
+      ${f ? form : mock.missing ? '' : `<button class="btn small" id="mock-new">${t('Внести пробный ЕНТ')}</button>`}
+    </details>`;
+  }
+
+  function bindMock(app, act) {
+    const det = app.querySelector('.cls-mock');
+    if (!det) return;
+    det.addEventListener('toggle', () => { mock.open = det.open; });
+    const f = mock.form;
+    const neu = app.querySelector('#mock-new');
+    if (neu) neu.addEventListener('click', () => { mock.form = mockForm(null); mock.note = null; rerender(); });
+    app.querySelectorAll('[data-mock-edit]').forEach(b => b.addEventListener('click', () => {
+      mock.form = mockForm(mock.list.find(x => x.id === b.dataset.mockEdit)); mock.note = null; rerender();
+    }));
+    app.querySelectorAll('[data-mock-drop]').forEach(b => b.addEventListener('click', () => {
+      if (mock.confirm !== b.dataset.mockDrop) { mock.confirm = b.dataset.mockDrop; return rerender(); }
+      const id = mock.confirm; mock.confirm = null;
+      if (mock.form && mock.form.id === id) mock.form = null;
+      act(() => A.mock.drop(id), t('Не удалось удалить.'));
+    }));
+    if (!f) return;
+    app.querySelector('#mock-name').addEventListener('input', e => { f.name = e.target.value; });
+    app.querySelector('#mock-date').addEventListener('input', e => { f.taken = e.target.value; });
+    app.querySelector('#mock-n').addEventListener('change', e => {
+      const n = Math.max(1, Math.min(80, Math.round(Number(e.target.value)) || 40));
+      f.topics = f.topics.slice(0, n).concat(Array(Math.max(0, n - f.topics.length)).fill(''));
+      rerender();
+    });
+    app.querySelectorAll('[data-mt]').forEach(sel => sel.addEventListener('change', () => { f.topics[Number(sel.dataset.mt)] = sel.value; }));
+    app.querySelectorAll('[data-mw]').forEach(inp => inp.addEventListener('input', () => { f.wrong[inp.dataset.mw] = inp.value; }));
+    app.querySelector('#mock-cancel').addEventListener('click', () => { mock.form = null; mock.note = null; rerender(); });
+    app.querySelector('#mock-save').addEventListener('click', () => {
+      const members = cls.members.filter(m => m.class_id === cls.sel);
+      if (!f.name.trim() || !f.taken) { mock.note = t('Укажите название и дату.'); return rerender(); }
+      if (!f.topics.some(Boolean)) { mock.note = t('Укажите тему хотя бы для одного вопроса.'); return rerender(); }
+      const results = {}, bad = [];
+      members.forEach(m => {
+        const r = T.parseMockWrong(f.wrong[m.user_id], f.topics.length);
+        if (r && r.bad) bad.push(m.student_name || t('Без имени'));
+        else if (r) results[m.user_id] = r;
+      });
+      if (bad.length) { mock.note = t('Проверьте номера вопросов: {names}.', { names: bad.join(', ') }); return rerender(); }
+      mock.note = null;
+      act(async () => { await A.mock.save(f.id, cls.sel, f.name.trim(), f.taken, f.topics, results); mock.form = null; }, t('Не удалось сохранить пробный ЕНТ. Проверь интернет и попробуй ещё раз.'));
+    });
   }
   async function loadClasses() {
     if (cls.busy) return;
@@ -102,7 +210,8 @@
           ${members.length ? `<ul>${members.map(m => `<li><span>${esc(m.student_name || t('Без имени'))}${data[m.user_id] ? '' : ` <span class="muted small">· ${t('ещё нет прогресса')}</span>`}</span><button class="link small" data-kick="${esc(m.user_id)}">${cls.kick === m.user_id ? t('Точно убрать?') : t('Убрать')}</button></li>`).join('')}</ul>`
             : `<p class="muted small">${t('Пока никто не вступил. Напишите код на доске — это займёт минуту.')}</p>`}
           <button class="btn small danger" id="drop-class">${cls.confirmDrop ? t('Точно удалить класс «{name}»?', { name: esc(sel.name) }) : t('Удалить класс')}</button>
-        </details>` : ''}
+        </details>
+        ${mockHtml(members, data)}` : ''}
     </section>`;
   }
 
@@ -112,6 +221,7 @@
     const det = app.querySelector('.cls-members');
     if (det) det.addEventListener('toggle', () => { cls.open = det.open; });
     const act = async (fn, fail) => { try { await fn(); } catch (e) { cls.error = fail; } await loadClasses(); };
+    bindMock(app, act);
     app.querySelector('#new-class').addEventListener('submit', e => {
       e.preventDefault();
       const name = app.querySelector('#cname').value.trim();
@@ -119,8 +229,9 @@
       act(async () => { const c = await A.classes.create(name); cls.sel = c && c.id; }, t('Не удалось создать класс.'));
     });
     app.querySelectorAll('[data-cls]').forEach(b => b.addEventListener('click', async () => {
-      cls.sel = b.dataset.cls; cls.confirmDrop = false; cls.kick = null;
+      cls.sel = b.dataset.cls; cls.confirmDrop = false; cls.kick = null; mock.form = null; mock.confirm = null;
       if (!cls.data[cls.sel]) { try { await loadClass(cls.sel); } catch (e) { cls.error = t('Не удалось загрузить классы. Проверь интернет и обнови страницу.'); } }
+      else if (mock.classId !== cls.sel) await loadMock(cls.sel);
       rerender();
     }));
     const copy = app.querySelector('#copy-link');

@@ -53,3 +53,19 @@ denied: permission denied for table ai_usage (таблицу лимита чит
 denied: new row violates row-level security policy for table "answers" (записать за другого)
 denied: permission denied for table answers (гость)
 выгрузка: 69e2703f4b frac
+16. пробный ЕНТ: учитель сохраняет результаты своего класса; чужие ученики и неверные номера отбрасываются
+11 «Б»
+11 «Б»
+t
+ученики в результатах: 1, ошибки Айгерим: {2,3}
+denied: permission denied for table mock_results (писать напрямую)
+выгрузка: frac 1/2, pct 1/1
+17. пробный ЕНТ: ученик, другой учитель и гость не видят; чужой класс сохранить нельзя
+Айгерим: работ 0, результатов 0
+другой учитель: работ 0, результатов 0
+denied: not your class (чужой класс)
+denied: permission denied for table mock_tests (гость)
+18. роль учителя снята — пробные ЕНТ скрыты сразу
+Готово: teacher@school.kz больше не учитель
+работ: 0
+Готово: teacher@school.kz — учитель

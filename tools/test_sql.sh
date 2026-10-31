@@ -10,7 +10,7 @@ P="psql -v ON_ERROR_STOP=1 -q"
 $P -d postgres -c "drop database if exists $DB" -c "create database $DB"
 $P -d "$DB" -f supabase/test/shim.sql
 for run in 1 2; do  # второй прогон проверяет, что файлы можно выполнять повторно
-  for f in schema answers ai teachers classes; do $P -d "$DB" -f supabase/$f.sql >/dev/null 2>&1 || { echo "ОШИБКА в supabase/$f.sql"; $P -d "$DB" -f supabase/$f.sql; exit 1; }; done
+  for f in schema answers ai teachers classes mock; do $P -d "$DB" -f supabase/$f.sql >/dev/null 2>&1 || { echo "ОШИБКА в supabase/$f.sql"; $P -d "$DB" -f supabase/$f.sql; exit 1; }; done
 done
 echo "Все supabase/*.sql выполняются, повторно тоже."
 $P -d "$DB" -f supabase/analysis.sql >/dev/null && echo "supabase/analysis.sql выполняется."

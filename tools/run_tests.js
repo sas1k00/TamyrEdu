@@ -3,7 +3,8 @@
  *   python3 -m http.server 8765 &   (из корня репозитория)
  *   node tools/run_tests.js http://127.0.0.1:8765
  * Что проверяется: tests.html (движок + симуляция), tests-academy.html на русском и казахском,
- * и «дымовой» прогон приложения: главные экраны открываются без ошибок JavaScript и без горизонтальной прокрутки.
+ * «дымовой» прогон приложения: главные экраны открываются без ошибок JavaScript и без горизонтальной прокрутки,
+ * и незаконченная диагностика переживает уход на другой экран и обновление страницы.
  * Нужен Playwright (npm i playwright; npx playwright install chromium). Выход с кодом 1 при любой ошибке.
  */
 const { chromium } = require('playwright');
@@ -43,6 +44,32 @@ const BASE = (process.argv[2] || 'http://127.0.0.1:8765').replace(/\/$/, '');
       report(!overflow && !empty, `${vp.width}px ${hash || '/'}${overflow ? ' — горизонтальная прокрутка' : ''}${empty ? ' — пустой экран' : ''}`);
     }
     errors.forEach(e => report(false, `${vp.width}px: ошибка JavaScript: ${e}`));
+    await ctx.close();
+  }
+
+  // диагностика не теряется: ушёл на «Карту» и обновил страницу — вернулся к тому же вопросу
+  console.log('Незаконченная диагностика:');
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on('pageerror', e => errors.push(e.message));
+    await p.goto(`${BASE}/index.html#start`);
+    await p.fill('#name', 'Тест');
+    await p.click('#start-form button[type=submit]');
+    for (let i = 0; i < 3; i++) { await p.click('.opt >> nth=0'); await p.waitForTimeout(50); }
+    const question = await p.textContent('.qtext');
+    await p.goto(`${BASE}/index.html#map`);
+    report(!!(await p.$('.banner.resume')), 'на «Карте» есть «Продолжить диагностику»');
+    await p.reload();
+    await p.waitForTimeout(300);
+    await p.click('.banner.resume a');
+    await p.waitForTimeout(300);
+    const meta = await p.textContent('.qmeta');
+    report(meta.includes('4') && (await p.textContent('.qtext')) === question, 'после обновления страницы — тот же 4-й вопрос');
+    await p.goto(`${BASE}/index.html#start`);
+    report(!!(await p.$('.banner.resume')), 'на старте предупреждение о незаконченной диагностике');
+    errors.forEach(e => report(false, `ошибка JavaScript: ${e}`));
     await ctx.close();
   }
 

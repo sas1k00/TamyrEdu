@@ -257,11 +257,19 @@
       drop: classId => authed('/rest/v1/classes?id=eq.' + encodeURIComponent(classId), { method: 'DELETE' })
     },
 
+    /* Пробные ЕНТ класса (supabase/mock.sql): видит и пишет только учитель этого класса. */
+    mock: {
+      list: classId => authed('/rest/v1/mock_tests?select=id,name,taken_on,topics,mock_results(user_id,wrong)&class_id=eq.' + encodeURIComponent(classId) + '&order=taken_on'),
+      save: (id, classId, name, taken, topics, results) => authed('/rest/v1/rpc/save_mock_test', { method: 'POST',
+        body: { p_id: id, p_class: classId, p_name: name, p_taken: taken, p_topics: topics, p_results: results } }),
+      drop: id => authed('/rest/v1/mock_tests?id=eq.' + encodeURIComponent(id), { method: 'DELETE' })
+    },
+
     /* Журнал ответов для будущих моделей (supabase/answers.sql). Пишется только у вошедших: при регистрации они дали согласие.
        Ответы копятся на устройстве и уходят пачками — без сети ничего не теряется. */
     logAnswer(rec) {
       if (!enabled || !session) return;
-      queue.push(Object.assign({ uid: session.user.id, at: new Date().toISOString(), lang: T.lang }, rec));
+      queue.push(Object.assign({ uid: session.user.id, at: new Date().toISOString(), lang: T.lang, engine: T.ENGINE }, rec));
       if (queue.length > QUEUE_MAX) queue.splice(0, queue.length - QUEUE_MAX);
       saveQueue();
       clearTimeout(logTimer);
@@ -279,7 +287,7 @@
 
   const QKEY = 'tamyr.answers', QUEUE_MAX = 500;
   let queue = [], logTimer = null, logOff = false, flushing = false;
-  let noRecall = false; // в таблице ещё нет столбца recall (answers.sql не перевыполнен) — шлём без него, ответы не теряем
+  let oldTable = false; // в таблице ещё нет новых столбцов recall/explore/engine (answers.sql не перевыполнен) — шлём без них, ответы не теряем
   try { queue = JSON.parse(localStorage.getItem(QKEY) || '[]'); if (!Array.isArray(queue)) queue = []; } catch (e) { queue = []; }
   function saveQueue() { try { localStorage.setItem(QKEY, JSON.stringify(queue)); } catch (e) { /* нет хранилища — очередь живёт в памяти */ } }
   async function flushAnswers() {
@@ -290,7 +298,8 @@
     flushing = true;
     try {
       await authed('/rest/v1/answers', { method: 'POST', headers: { Prefer: 'return=minimal' },
-        body: batch.map(({ uid: _, recall, ...r }) => (noRecall ? r : Object.assign(r, { recall: recall === undefined ? null : recall }))) });
+        body: batch.map(({ uid: _, recall, explore, engine, ...r }) => (oldTable ? r
+          : Object.assign(r, { recall: recall === undefined ? null : recall, explore: !!explore, engine: engine || null }))) });
       const sent = new Set(batch);
       queue = queue.filter(r => !sent.has(r)); saveQueue();
       if (queue.some(r => r.uid === uid)) setTimeout(flushAnswers, 0);
@@ -298,8 +307,8 @@
       // нет таблицы (supabase/answers.sql ещё не выполнен) — не долбим сервер до перезагрузки, ответы ждут на устройстве
       if (e.status === 404) logOff = true;
       // сервер отверг сами записи (не прошли проверки таблицы) — выбрасываем пачку, иначе она застрянет навсегда
-      // 400 из-за нового столбца recall — повторяем ту же пачку без него
-      else if (e.status === 400 && !noRecall) { noRecall = true; flushing = false; return flushAnswers(); }
+      // 400 из-за новых столбцов — повторяем ту же пачку без них
+      else if (e.status === 400 && !oldTable) { oldTable = true; flushing = false; return flushAnswers(); }
       else if (e.status === 400 || e.status === 409 || e.status === 422) { const bad = new Set(batch); queue = queue.filter(r => !bad.has(r)); saveQueue(); }
     } finally { flushing = false; }
   }

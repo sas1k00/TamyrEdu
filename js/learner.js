@@ -109,7 +109,8 @@
         else if (st === 'gap') x.st = 'gap';
       });
       res.misconceptions.forEach(m => { S.mis[m.id] = m.count; });
-      S.diag = { at: now(), asked: res.asked, roots: res.rootGaps.slice() };
+      // статусы всех тем на момент диагностики — чтобы потом сверить вердикт с пробным ЕНТ (supabase/analysis.sql, запрос 7)
+      S.diag = { at: now(), asked: res.asked, roots: res.rootGaps.slice(), status: Object.assign({}, res.status), engine: T.ENGINE };
       touchDay();
       res.rootGaps.forEach(id => logEvent('diag', id));
       save();

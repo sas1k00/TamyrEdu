@@ -112,6 +112,7 @@
       <section class="card narrow">
         <h1>${t('С чего начнём?')}</h1>
         <p class="muted">${t('Диагностика — от нескольких вопросов до нескольких десятков: чем больше пробелов, тем глубже спускаемся. Её можно остановить в любой момент — план построится по тому, что уже известно. Не знаешь ответ — жми «Не знаю»: угадывание портит карту.')}</p>
+        ${pendingDiag() ? `<div class="banner resume"><span>${t('Есть незаконченная диагностика: отвечено вопросов — {n}. Новая диагностика её заменит.', { n: ui.diag.log.length })}</span><a class="btn small primary" href="#quiz">${t('Продолжить диагностику')}</a></div>` : ''}
         ${L.exists() ? `<p class="note">${t('Новая диагностика заменит текущий прогресс.')}</p>` : ''}
         <form id="start-form">
           <label class="field"><span>${t('Имя')}</span><input id="name" required maxlength="40" autocomplete="given-name" value="${esc(ui.name || (L.exists() ? L.get().name : A.user() ? A.user().name : ''))}" placeholder="${t('Например, Айгерим')}"></label>
@@ -126,13 +127,17 @@
       e.preventDefault();
       ui.name = app.querySelector('#name').value.trim() || t('Ученик');
       ui.goal = app.querySelector('input[name=goal]:checked').value;
+      clearDiag(); // новая диагностика (или старт без неё) заменяет незаконченную
       if (ui.goal === 'none') {
         L.startBlank(ui.name);
         ui.banner = t('Начинаем с основ. Каждую тему сначала проверим двумя задачами: знаешь — идём выше, нет — разберём.');
         location.hash = '#home';
         return;
       }
-      ui.diag = new T.Diagnostic(T.GOALS.find(g => g.id === ui.goal).start);
+      const seed = Math.floor(Math.random() * 2147483647);
+      ui.diag = new T.Diagnostic(T.GOALS.find(g => g.id === ui.goal).start, { rand: T.rng(seed) });
+      ui.diagRun = { goal: ui.goal, name: ui.name, seed, answers: [] };
+      saveDiag();
       location.hash = '#quiz';
     });
   }
@@ -147,8 +152,42 @@
     return '';
   }
 
+  /* Незаконченная диагностика хранится на устройстве: ушёл на «Карту», обновил страницу, закрыл вкладку —
+     продолжаешь с того же вопроса. Храним не состояние движка, а зерно случайности и ответы: при открытии
+     диагностика проигрывается заново и приходит ровно к тому же вопросу. Не совпал вопрос (банк изменился) — начинаем заново. */
+  const DIAG_KEY = (T.LEARNER_KEY || 'tamyr.academy.v1') + '.diag';
+  function saveDiag() {
+    try { localStorage.setItem(DIAG_KEY, JSON.stringify(ui.diagRun)); } catch (e) { /* нет хранилища — диагностика живёт до перезагрузки */ }
+  }
+  function clearDiag() {
+    ui.diag = null; ui.diagRun = null;
+    try { localStorage.removeItem(DIAG_KEY); } catch (e) { /* нечего удалять */ }
+  }
+  function loadDiag() {
+    if (ui.diag) return ui.diag;
+    let run = null;
+    try { run = JSON.parse(localStorage.getItem(DIAG_KEY) || 'null'); } catch (e) { run = null; }
+    const goal = run && T.GOALS.find(g => g.id === run.goal);
+    if (!goal || !Array.isArray(run.answers) || !Number.isInteger(run.seed)) return null;
+    const d = new T.Diagnostic(goal.start, { rand: T.rng(run.seed) });
+    for (const a of run.answers) {
+      const cur = d.next();
+      if (!cur || !a || cur.question.id !== a.q || !(a.i === null || (Number.isInteger(a.i) && a.i >= 0 && a.i < cur.options.length))) { clearDiag(); return null; }
+      d.answer(a.i);
+    }
+    ui.diag = d; ui.diagRun = run; ui.goal = run.goal; ui.name = run.name;
+    return d;
+  }
+  // есть начатая диагностика хотя бы с одним ответом — её стоит предложить продолжить
+  const pendingDiag = () => { const d = loadDiag(); return d && d.log.length ? d : null; };
+  function resumeBanner() {
+    const d = pendingDiag();
+    if (!d) return;
+    app.insertAdjacentHTML('afterbegin', `<div class="banner resume"><span>${t('Диагностика не закончена: отвечено вопросов — {n}. Можно продолжить с того же места.', { n: d.log.length })}</span><a class="btn small primary" href="#quiz">${t('Продолжить диагностику')}</a></div>`);
+  }
+
   function viewQuiz() {
-    const d = ui.diag;
+    const d = loadDiag();
     if (!d) { location.hash = '#start'; return; }
     const cur = d.next();
     if (!cur) return finishDiagnostic();
@@ -178,7 +217,10 @@
     app.querySelectorAll('[data-i]').forEach(b => b.addEventListener('click', () => {
       const opt = b.dataset.i === 'skip' ? null : cur.options[Number(b.dataset.i)];
       logAnswer('diag', cur.topic, cur.question, opt, 0, shown);
-      d.answer(b.dataset.i === 'skip' ? null : Number(b.dataset.i));
+      const idx = b.dataset.i === 'skip' ? null : Number(b.dataset.i);
+      d.answer(idx);
+      ui.diagRun.answers.push({ q: cur.question.id, i: idx });
+      saveDiag();
       viewQuiz();
     }));
     const stop = app.querySelector('#stop');
@@ -186,18 +228,18 @@
   }
 
   /* Один ответ — в журнал (только у вошедших). choice — номер варианта в банке, а не на экране: так ответы сравнимы между учениками. */
-  function logAnswer(mode, topic, q, opt, hints, shown) {
+  function logAnswer(mode, topic, q, opt, hints, shown, explore) {
     // в повторениях пишем и прогноз FSRS «вспомнит ли» — по нему потом проверим, насколько модель точна для наших учеников
     const r = mode === 'check' && L.exists() ? T.fsrs.retrievability(L.topic(topic).fs, L.now()) : null;
     A.logAnswer({ mode, topic, question: q.gen ? 'gen:' + topic : q.id, choice: opt ? q.options.indexOf(opt) : null,
       correct: !!(opt && opt.ok), mis: opt && opt.mis ? opt.mis : null, hints, ms: Math.min(3600000, Date.now() - shown),
-      recall: r === null ? null : Math.round(r * 1000) / 1000 });
+      recall: r === null ? null : Math.round(r * 1000) / 1000, explore: !!explore });
   }
 
   function finishDiagnostic() {
     const res = ui.diag.result();
     L.fromDiagnostic(ui.name, res);
-    ui.diag = null;
+    clearDiag();
     const q = questions(res.asked);
     ui.banner = res.rootGaps.length
       ? t('Диагностика готова: {q}. {rw} — <b>{roots}</b>. Начинаем снизу: пока корень не закрыт, темы выше будут сыпаться.',
@@ -319,10 +361,23 @@
   }
 
   /* ---------- Практика и проверка ---------- */
+  /* 1 задача из 10 в практике — случайная задача из любой другой темы (только у вошедших: ответ уходит в журнал).
+     В журнале нужны ответы, которые не зависят от того, что выбирает движок, — иначе модель унаследует его слепые зоны.
+     На прогресс такая задача не влияет. Не первой в серии и не две подряд. */
+  const EXPLORE_RATE = 0.1;
   function newQuestion(s) {
-    // сначала — ловушка, в которую ученик только что попал; иначе — его частые ошибки из этой темы
-    const mine = Object.keys(L.get().mis).filter(k => T.MISCONCEPTIONS[k].home === s.topic).sort((a, b) => L.get().mis[b] - L.get().mis[a]);
-    s.q = T.nextQuestion(s.topic, L.topic(s.topic).seen, Math.random, s.lastMis ? [s.lastMis] : mine);
+    const explore = s.mode === 'practice' && s.n > 0 && !s.explore && A.enabled && A.user() && Math.random() < EXPLORE_RATE;
+    if (explore) {
+      const others = T.TOPICS.filter(x => x.id !== s.topic);
+      const topic = others[Math.floor(Math.random() * others.length)].id, bank = T.questionsByTopic[topic];
+      s.explore = topic;
+      s.q = bank[Math.floor(Math.random() * bank.length)];
+    } else {
+      s.explore = null;
+      // сначала — ловушка, в которую ученик только что попал; иначе — его частые ошибки из этой темы
+      const mine = Object.keys(L.get().mis).filter(k => T.MISCONCEPTIONS[k].home === s.topic).sort((a, b) => L.get().mis[b] - L.get().mis[a]);
+      s.q = T.nextQuestion(s.topic, L.topic(s.topic).seen, Math.random, s.lastMis ? [s.lastMis] : mine);
+    }
     s.opts = T.shuffle(s.q.options, Math.random);
     s.hints = 0; s.answered = null; s.flagged = null; s.ai = null; s.shown = Date.now();
   }
@@ -340,7 +395,7 @@
   }
 
   function renderSession() {
-    const s = ui.session, tp = T.TOPIC[s.topic], sol = T.solutionOf(s.q), a = s.answered;
+    const s = ui.session, tp = T.TOPIC[s.explore || s.topic], sol = T.solutionOf(s.q), a = s.answered;
     const practice = s.mode === 'practice';
     const progress = practice ? pips(s.mastered ? L.NEED : L.topic(s.topic).streak)
       : `<span class="muted">${t('Вопрос {a} из {b}', { a: Math.min(s.n + (a ? 0 : 1), L.CHECK_SIZE), b: L.CHECK_SIZE })}</span>`;
@@ -372,7 +427,8 @@
     app.innerHTML = `
       <section class="card narrow session">
         <div class="qmeta"><span class="chip">${esc(tp.title)}</span>${progress}</div>
-        <p class="why">${practice ? t('Практика: {n} верных подряд без подсказок — и тема освоена', { n: L.NEED }) : t('Проверка без подсказок: два вопроса')}</p>
+        <p class="why">${s.explore ? t('Случайная задача из другой темы. На прогресс не влияет — она помогает проверять, насколько точно Tamyr находит пробелы.')
+          : practice ? t('Практика: {n} верных подряд без подсказок — и тема освоена', { n: L.NEED }) : t('Проверка без подсказок: два вопроса')}</p>
         <h2 class="qtext">${math(s.q.text)}</h2>
         <div class="options">${s.opts.map((o, i) => `<button class="opt ${a && o.ok ? 'is-ok' : ''} ${a && a.idx === i && !o.ok ? 'is-bad' : ''}" data-i="${i}" ${a ? 'disabled' : ''}><span class="key">${'АБВГ'[i]}</span><span>${math(o.t)}</span></button>`).join('')}</div>
         ${a ? '' : `<div class="row">
@@ -388,9 +444,10 @@
       const opt = idx === null ? null : s.opts[idx];
       const ok = !!(opt && opt.ok);
       s.answered = { idx, ok, opt };
-      s.lastMis = !ok && opt && opt.mis ? opt.mis : null;
-      logAnswer(s.mode, s.topic, s.q, opt, s.hints, s.shown);
+      logAnswer(s.mode, s.explore || s.topic, s.q, opt, s.hints, s.shown, !!s.explore);
       s.n++;
+      if (s.explore) return renderSession(); // случайная задача: только в журнал, прогресс и серия не меняются
+      s.lastMis = !ok && opt && opt.mis ? opt.mis : null;
       if (ok) s.right++;
       s.flagged = L.recordAnswer(s.topic, s.q, ok ? null : opt);
       if (practice) {
@@ -588,7 +645,7 @@
       if (!ui.confirmReset) { ui.confirmReset = true; return viewProgress(); }
       ui.confirmReset = false;
       if (A.user()) A.clearRemote().catch(() => {}); // иначе при следующей сверке прогресс вернётся из облака
-      L.reset(); location.hash = '#home';
+      L.reset(); clearDiag(); location.hash = '#home';
     });
   }
 
@@ -647,6 +704,7 @@
     await A.signOut();
     // Прогресс аккаунта с устройства убираем. Если последние изменения не дошли до облака — оставляем, чтобы не потерять.
     if (own && saved) L.forget();
+    clearDiag(); // незаконченная диагностика — того, кто вышел; следующему на этом телефоне она не нужна
     ui.auth = { mode: 'in', email: '', error: null, note: null, busy: false };
     if (own && !saved) ui.banner = t('Не удалось сохранить последние изменения в облаке, поэтому прогресс оставлен на этом устройстве.');
     go(L.exists() ? '#home' : '#account');
@@ -914,13 +972,14 @@
       history.replaceState(null, '', '#account');
       return route();
     }
-    if (view === 'account') return viewAccount();
-    if (view === 'map') return viewMap();
-    if (!L.exists()) return viewLanding();
+    if (view === 'account') { viewAccount(); return resumeBanner(); }
+    if (view === 'map') { viewMap(); return resumeBanner(); }
+    if (!L.exists()) { viewLanding(); return resumeBanner(); }
     if (view === 'lesson' && known(arg)) return viewLesson(arg, true);
     if ((view === 'practice' || view === 'check') && known(arg)) return viewSession(view, arg);
-    if (view === 'progress') return viewProgress();
+    if (view === 'progress') { viewProgress(); return resumeBanner(); }
     viewHome();
+    resumeBanner();
   }
   // Клавиши 1–4 выбирают вариант ответа
   document.addEventListener('keydown', e => {

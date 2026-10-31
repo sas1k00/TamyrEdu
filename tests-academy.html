@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tamyr Academy — тесты</title>
-  <link rel="stylesheet" href="css/style.css?v=25">
+  <link rel="stylesheet" href="css/style.css?v=26">
 </head>
 <body>
   <main>
@@ -15,21 +15,22 @@
       <ul class="tests" id="tests"></ul>
     </section>
   </main>
-  <script src="js/data.js?v=25"></script>
-  <script src="js/data-ent.js?v=25"></script>
+  <script src="js/data.js?v=26"></script>
+  <script src="js/data-ent.js?v=26"></script>
   <script>window.Tamyr.LEARNER_KEY = 'tamyr.academy.test';</script>
-  <script src="js/i18n.js?v=25"></script>
-  <script src="js/engine.js?v=25"></script>
-  <script src="js/content.js?v=25"></script>
-  <script src="js/content-ent.js?v=25"></script>
-  <script src="js/kk-ent.js?v=25"></script>
-  <script src="js/kk.js?v=25"></script>
-  <script src="js/fsrs.js?v=25"></script>
-  <script src="js/learner.js?v=25"></script>
-  <script src="js/store.js?v=25"></script>
-  <script src="js/config.js?v=25"></script>
+  <script src="js/i18n.js?v=26"></script>
+  <script src="js/engine.js?v=26"></script>
+  <script src="js/content.js?v=26"></script>
+  <script src="js/content-ent.js?v=26"></script>
+  <script src="js/kk-ent.js?v=26"></script>
+  <script src="js/kk.js?v=26"></script>
+  <script src="js/fsrs.js?v=26"></script>
+  <script src="js/learner.js?v=26"></script>
+  <script src="js/store.js?v=26"></script>
+  <script src="js/config.js?v=26"></script>
   <script>window.Tamyr.CONFIG = { supabaseUrl: '', supabaseKey: '' }; // тесты всегда идут без облака</script>
-  <script src="js/account.js?v=25"></script>
+  <script src="js/account.js?v=26"></script>
+  <script src="js/teacher.js?v=26"></script>
   <script>
     const T = window.Tamyr, L = T.learner;
     const out = document.getElementById('tests');
@@ -402,6 +403,24 @@
       const extra = [];
       Object.entries(KK.ui).forEach(([ru, kk]) => (kk.match(/\{\w+\}/g) || []).forEach(p => { if (!ru.includes(p)) extra.push(ru + ' → ' + p); }));
       eq(extra, [], 'лишние подстановки: ');
+    });
+
+    /* ---------- Данные для моделей ---------- */
+    test('Диагностика сохраняет статусы всех тем и версию движка — для сверки с пробным ЕНТ', () => {
+      seeded();
+      const d = L.get().diag;
+      eq([d.status.frac, d.engine], ['gap', T.ENGINE]);
+      eq(Object.keys(d.status).length, T.TOPICS.length);
+    });
+    test('Пробный ЕНТ: номера ошибок учителя разбираются правильно', () => {
+      eq(T.parseMockWrong('3, 7, 12-14', 40), [3, 7, 12, 13, 14]);
+      eq(T.parseMockWrong(' 14 – 12 ; 5 5 ', 40), { bad: true }); // диапазон наоборот
+      eq(T.parseMockWrong('5;5 2', 40), [2, 5]);
+      eq(T.parseMockWrong('12 - 14', 40), [12, 13, 14]);
+      eq(T.parseMockWrong('0', 40), []);
+      eq(T.parseMockWrong('  ', 40), null);
+      eq(T.parseMockWrong('41', 40), { bad: true });
+      eq(T.parseMockWrong('3, x', 40), { bad: true });
     });
 
     L.reset();
