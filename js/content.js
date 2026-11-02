@@ -327,6 +327,9 @@
     }
   };
 
+  // те же помощники нужны генераторам тем ЕНТ (js/gen-ent.js) и пробному ЕНТ (js/ent.js)
+  T.genKit = { num, dec, gcd, frac, ri, pick, near, build, tr };
+
   /* Решение вопроса: у сгенерированных — своё, у банка — из SOLUTIONS. */
   T.solutionOf = q => q.sol || T.SOLUTIONS[q.id] || [];
 

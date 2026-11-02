@@ -36,7 +36,7 @@ const BASE = (process.argv[2] || 'http://127.0.0.1:8765').replace(/\/$/, '');
     const p = await ctx.newPage();
     const errors = [];
     p.on('pageerror', e => errors.push(e.message));
-    for (const hash of ['', '#demo', '#home', '#map', '#progress', '#lesson/frac', '#practice/frac', '#start', '#account', '#teacher']) {
+    for (const hash of ['', '#demo', '#home', '#map', '#progress', '#lesson/frac', '#practice/frac', '#start', '#account', '#teacher', '#ent']) {
       await p.goto(`${BASE}/index.html${hash}`);
       await p.waitForTimeout(300);
       const overflow = await p.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
@@ -69,6 +69,32 @@ const BASE = (process.argv[2] || 'http://127.0.0.1:8765').replace(/\/$/, '');
     report(meta.includes('4') && (await p.textContent('.qtext')) === question, 'после обновления страницы — тот же 4-й вопрос');
     await p.goto(`${BASE}/index.html#start`);
     report(!!(await p.$('.banner.resume')), 'на старте предупреждение о незаконченной диагностике');
+    errors.forEach(e => report(false, `ошибка JavaScript: ${e}`));
+    await ctx.close();
+  }
+
+  // пробный ЕНТ: ответы сохраняются при обновлении страницы, итог считается
+  console.log('Пробный ЕНТ:');
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on('pageerror', e => errors.push(e.message));
+    await p.goto(`${BASE}/index.html#ent`);
+    await p.click('#ent-new');
+    await p.click('.opt >> nth=0');                       // задание 1
+    await p.click('[data-go="30"]');                      // 31: соответствие
+    await p.click('.mopt[data-item="0"] >> nth=1');
+    await p.click('.mopt[data-item="1"] >> nth=2');
+    await p.click('[data-go="35"]');                      // 36: несколько ответов
+    await p.click('.opt >> nth=0'); await p.click('.opt >> nth=3');
+    await p.reload(); await p.waitForTimeout(300);
+    const done = await p.$$eval('.ent-nav button.done', b => b.length);
+    report(done === 3, `после обновления страницы ответы на месте (${done} из 3)`);
+    report(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'задание на телефоне без горизонтальной прокрутки');
+    await p.click('#ent-end'); await p.click('#ent-end'); await p.waitForTimeout(300);
+    const head = await p.textContent('h1');
+    report(/из 50/.test(head), `итог посчитан: «${head.trim()}»`);
     errors.forEach(e => report(false, `ошибка JavaScript: ${e}`));
     await ctx.close();
   }

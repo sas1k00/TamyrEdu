@@ -71,6 +71,7 @@
         <div class="cta">
           <a class="btn primary" href="#start">${t('Найти мой корень')}</a>
           <a class="btn" href="#demo">${t('Посмотреть на примере')}</a>
+          <a class="btn ghost" href="#ent">${t('Пробный ЕНТ')}</a>
           ${teacherOk() ? `<a class="btn ghost" href="#teacher">${t('Панель учителя')}</a>` : ''}
         </div>
         <ul class="facts"><li><b>${T.TOPICS.length}</b> ${t('тем ЕНТ на одной карте')}</li><li><b>RU · KZ</b> ${t('два языка')}</li><li><b>${t('Бесплатно')}</b> ${t('и работает без интернета')}</li></ul>
@@ -265,6 +266,17 @@
       <span class="goal-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${g.need}" aria-valuenow="${Math.min(g.done, g.need)}"><i style="width:${pc}%"></i></span></div>`;
   }
 
+  /* Пробный ЕНТ на главной: незаконченный тест — продолжить, иначе последний результат. */
+  function entCard() {
+    const run = T.entPending(), last = L.entHistory().slice(-1)[0];
+    const done = run ? run.answers.filter(a => a !== null && (!Array.isArray(a) || a.some(x => x !== null))).length : 0;
+    return `<div class="card ent-card"><h2>${t('Пробный ЕНТ')}</h2>
+      <p class="muted small">${run ? t('Тест не закончен: отвечено {a} из 40, осталось {m} мин.', { a: done, m: Math.max(1, Math.round((run.deadline - Date.now()) / 60000)) })
+        : t('40 заданий в формате НЦТ · 50 баллов · 80 минут')}</p>
+      ${!run && last ? `<p class="small">${t('Последний результат: {score} из {max} · {date}', { score: last.score, max: last.max, date: fmtDate(last.at) })}</p>` : ''}
+      <a class="btn small ${run ? 'primary' : ''}" href="#ent">${run ? t('Продолжить тест') : t('Пройти тест')}</a></div>`;
+  }
+
   function viewHome() {
     const tasks = L.today(), roots = L.roots(), open = L.openTopics(), status = L.statusMap();
     const total = tasks.reduce((n, x) => n + x.min, 0);
@@ -313,6 +325,7 @@
           <div class="card map-card"><h2>${t('Карта знаний')}</h2><div id="home-graph"></div><a class="btn small" href="#map">${t('Открыть карту')}</a></div>
         </div>
         <div class="col">
+          ${entCard()}
           ${open.length ? `<div class="card"><h2>${t('Твой путь: снизу вверх')}</h2><ol class="plan">${open.slice(0, PATH_MAX).map(id => {
             const a = actionFor(id), lock = L.locked(id);
             return `<li class="${L.topic(id).st}"><span>${esc(title(id))} <small class="muted">${statusLabel(L.topic(id).st).toLowerCase()}</small></span>${lock ? `<span class="lock" title="${t('после предыдущих')}" aria-label="${t('после предыдущих')}"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg></span>` : `<a class="btn small" href="${a.href}">${a.label}</a>`}</li>`;
@@ -948,7 +961,7 @@
   function route() {
     const h = location.hash.replace('#', '') || 'home';
     const [view, arg] = h.split('/');
-    const group = { lesson: 'home', practice: 'home', check: 'home', start: 'home', setup: 'home', quiz: 'home' }[view] || view;
+    const group = { lesson: 'home', practice: 'home', check: 'home', start: 'home', setup: 'home', quiz: 'home', ent: 'home' }[view] || view;
     document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === group));
     document.getElementById('acct').classList.toggle('active', view === 'account');
     if (view !== 'progress') ui.confirmReset = false;
@@ -964,6 +977,7 @@
     }
     if (view === 'start' || view === 'setup') return viewStart(); // #setup — адрес из хакатонной версии
     if (view === 'quiz') return viewQuiz();
+    if (view === 'ent') return T.viewEnt(app);
     if (view === 'teacher') {
       if (teacherOk()) return T.viewTeacher(app);
       // ученику панель не показываем вовсе; гостю предлагаем войти — вдруг это учитель

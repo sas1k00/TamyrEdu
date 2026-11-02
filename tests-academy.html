@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tamyr Academy — тесты</title>
-  <link rel="stylesheet" href="css/style.css?v=26">
+  <link rel="stylesheet" href="css/style.css?v=27">
 </head>
 <body>
   <main>
@@ -15,22 +15,25 @@
       <ul class="tests" id="tests"></ul>
     </section>
   </main>
-  <script src="js/data.js?v=26"></script>
-  <script src="js/data-ent.js?v=26"></script>
+  <script src="js/data.js?v=27"></script>
+  <script src="js/data-ent.js?v=27"></script>
   <script>window.Tamyr.LEARNER_KEY = 'tamyr.academy.test';</script>
-  <script src="js/i18n.js?v=26"></script>
-  <script src="js/engine.js?v=26"></script>
-  <script src="js/content.js?v=26"></script>
-  <script src="js/content-ent.js?v=26"></script>
-  <script src="js/kk-ent.js?v=26"></script>
-  <script src="js/kk.js?v=26"></script>
-  <script src="js/fsrs.js?v=26"></script>
-  <script src="js/learner.js?v=26"></script>
-  <script src="js/store.js?v=26"></script>
-  <script src="js/config.js?v=26"></script>
+  <script src="js/i18n.js?v=27"></script>
+  <script src="js/engine.js?v=27"></script>
+  <script src="js/content.js?v=27"></script>
+  <script src="js/content-ent.js?v=27"></script>
+  <script src="js/gen-ent.js?v=27"></script>
+  <script src="js/kk-ent.js?v=27"></script>
+  <script src="js/kk.js?v=27"></script>
+  <script src="js/fsrs.js?v=27"></script>
+  <script src="js/learner.js?v=27"></script>
+  <script src="js/store.js?v=27"></script>
+  <script src="js/config.js?v=27"></script>
   <script>window.Tamyr.CONFIG = { supabaseUrl: '', supabaseKey: '' }; // тесты всегда идут без облака</script>
-  <script src="js/account.js?v=26"></script>
-  <script src="js/teacher.js?v=26"></script>
+  <script src="js/ent.js?v=27"></script>
+  <script src="tools/verify_gen.js?v=27"></script>
+  <script src="js/account.js?v=27"></script>
+  <script src="js/teacher.js?v=27"></script>
   <script>
     const T = window.Tamyr, L = T.learner;
     const out = document.getElementById('tests');
@@ -378,7 +381,7 @@
     }
     test('Перевод интерфейса: каждая строка t(…) из app.js, graph.js и teacher.js есть в словаре', () => {
       const missing = [];
-      ['js/app.js', 'js/graph.js', 'js/teacher.js'].forEach(file => {
+      ['js/app.js', 'js/graph.js', 'js/teacher.js', 'js/ent.js'].forEach(file => {
         const xhr = new XMLHttpRequest();
         xhr.open('GET', file + '?t=' + Date.now(), false); xhr.send();
         assert(xhr.status === 200, 'не удалось прочитать ' + file);
@@ -389,7 +392,7 @@
     });
     test('Перевод интерфейса: в словаре нет строк, которых нет в коде, и подстановки не потеряны', () => {
       let src = '';
-      ['js/app.js', 'js/graph.js', 'js/teacher.js'].forEach(file => {
+      ['js/app.js', 'js/graph.js', 'js/teacher.js', 'js/ent.js'].forEach(file => {
         const xhr = new XMLHttpRequest(); xhr.open('GET', file + '?t=' + Date.now(), false); xhr.send(); src += xhr.responseText;
       });
       const unused = Object.keys(KK.ui).filter(k => !src.includes("'" + k + "'"));
@@ -403,6 +406,46 @@
       const extra = [];
       Object.entries(KK.ui).forEach(([ru, kk]) => (kk.match(/\{\w+\}/g) || []).forEach(p => { if (!ru.includes(p)) extra.push(ru + ' → ' + p); }));
       eq(extra, [], 'лишние подстановки: ');
+    });
+
+    /* ---------- Генераторы и пробный ЕНТ ---------- */
+    test('Генераторы: по 300 задач на каждую тему — 4 разных варианта, один верный, метки ошибок существуют', () => {
+      const bad = [];
+      Object.entries(T.GENERATORS).forEach(([id, g]) => { for (let s = 1; s <= 300; s++) {
+        const q = g(T.rng(s)), texts = q.options.map(o => o.t);
+        if (q.topic !== id || texts.length !== 4 || new Set(texts).size !== 4 || q.options.filter(o => o.ok).length !== 1
+          || q.options.some(o => o.mis && !T.MISCONCEPTIONS[o.mis]) || /NaN|undefined|Infinity/.test(JSON.stringify(q)) || !q.sol.length) bad.push(id + ': ' + q.text);
+      } });
+      eq(bad.slice(0, 5), []);
+    });
+    test('Генераторы: верный ответ подтверждён независимо — подстановкой, пересчётом, численно (tools/verify_gen.js)', () => {
+      const lang = T.lang; T.lang = 'ru'; const bad = [];
+      try { Object.values(T.GENERATORS).forEach(g => { for (let s = 1; s <= 300; s++) { const e = verifyGenerated(g(T.rng(s))); if (e) bad.push(e); } }); } finally { T.lang = lang; }
+      eq(bad.slice(0, 5), []);
+    });
+    test('Пробный ЕНТ: 40 заданий в порядке НЦТ (25 + 5 по тексту + 5 соответствие + 5 несколько ответов), максимум 50 баллов', () => {
+      const want = Array(25).fill('single').concat(Array(5).fill('context'), Array(5).fill('match'), Array(5).fill('multi'));
+      for (let s = 1; s <= 30; s++) {
+        const m = T.buildEnt(T.rng(s));
+        eq(m.map(x => x.type), want);
+        eq(m.reduce((a, x) => a + T.ENT_POINTS[x.type], 0), 50);
+        assert(!/NaN|undefined|Infinity/.test(JSON.stringify(m)), 'NaN в варианте ' + s);
+        assert(new Set(m.slice(25, 30).map(x => x.passage)).size === 1, 'у контекста один текст');
+        m.filter(x => x.type === 'single' || x.type === 'context').forEach(x => assert(x.options.length === 4 && x.options.filter(o => o.ok).length === 1, x.text));
+      }
+    });
+    test('Пробный ЕНТ: в заданиях «несколько ответов» и «соответствие» каждый вариант проверен независимо', () => {
+      const lang = T.lang; T.lang = 'ru'; const bad = [];
+      try { [T.ENT_MULTI, T.ENT_MATCH].forEach(set => Object.values(set).forEach(g => { for (let s = 1; s <= 200; s++) { const e = verifyEnt(g(T.rng(s))); if (e) bad.push(e); } })); } finally { T.lang = lang; }
+      eq(bad.slice(0, 5), []);
+    });
+    test('Пробный ЕНТ: баллы по правилам — несколько ответов 2/1/0, соответствие только целиком', () => {
+      const multi = { type: 'multi', options: [{ ok: true }, { ok: true }, {}, {}, {}, {}] };
+      eq([[0, 1], [0], [0, 1, 2], [0, 2], [2, 3], [], null].map(a => T.entScore(multi, a)), [2, 1, 1, 0, 0, 0, 0]);
+      const match = { type: 'match', items: [{ a: 2 }, { a: 0 }], options: ['', '', '', ''] };
+      eq([[2, 0], [2, 1], [null, 0], null].map(a => T.entScore(match, a)), [2, 0, 0, 0]);
+      const single = { type: 'single', options: [{}, { ok: true }, {}, {}] };
+      eq([1, 0, null].map(a => T.entScore(single, a)), [1, 0, 0]);
     });
 
     /* ---------- Данные для моделей ---------- */
