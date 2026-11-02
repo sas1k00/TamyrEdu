@@ -35,7 +35,7 @@
   function blank(name) {
     const topics = {};
     T.TOPICS.forEach(t => { topics[t.id] = { st: 'unknown', streak: 0, seen: [], lesson: false, due: null, ivl: 0, fs: null, miss: 0 }; });
-    return { v: 1, name: name || 'Ученик', created: Date.now(), offset: 0, topics, mis: {}, log: [], days: [], daily: {}, diag: null, owner, updated: 0, demo: false };
+    return { v: 1, name: name || 'Ученик', created: Date.now(), offset: 0, topics, mis: {}, log: [], days: [], daily: {}, diag: null, ent: [], owner, updated: 0, demo: false };
   }
 
   /* Чужие/старые данные не должны ломать приложение: добавляем недостающие темы, выбрасываем неизвестные статусы. */
@@ -65,6 +65,8 @@
     // задач решено по дням (для цели дня); храним две недели
     if (s.daily && typeof s.daily === 'object') Object.keys(s.daily).filter(k => /^\d{4}-\d\d-\d\d$/.test(k) && Number.isFinite(s.daily[k])).sort().slice(-14).forEach(k => { base.daily[k] = Math.max(0, Math.floor(s.daily[k])); });
     base.diag = s.diag && typeof s.diag === 'object' ? s.diag : null;
+    // результаты пробного ЕНТ внутри Tamyr: последние 10
+    base.ent = Array.isArray(s.ent) ? s.ent.filter(e => e && Number.isFinite(e.at) && Number.isFinite(e.score) && Number.isFinite(e.max)).slice(-10).map(e => ({ at: e.at, score: e.score, max: e.max })) : [];
     base.owner = typeof s.owner === 'string' && s.owner ? s.owner.slice(0, 64) : null;
     base.updated = Number.isFinite(s.updated) ? s.updated : 0;
     base.demo = s.demo === true;
@@ -115,6 +117,10 @@
       res.rootGaps.forEach(id => logEvent('diag', id));
       save();
     },
+
+    /* Пробный ЕНТ (js/ent.js): результат сохраняется в прогресс — его видно на «Прогрессе» и он синхронизируется с аккаунтом. */
+    addEnt(rec) { S.ent = (S.ent || []).concat([{ at: rec.at, score: rec.score, max: rec.max }]).slice(-10); save(); },
+    entHistory: () => (S && S.ent) || [],
 
     topic: tp,
     /* Статусы для карты: непроверенные темы над пробелом показываем «под угрозой». */
