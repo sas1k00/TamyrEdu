@@ -20,7 +20,8 @@ p.add_argument('--port', type=int, default=8772)
 p.add_argument('--confirm', action='store_true', help='требовать подтверждение почты')
 p.add_argument('--ttl', type=int, default=3600, help='срок жизни токена, секунды')
 p.add_argument('--teachers', default='', help='почты учителей через запятую')
-p.add_argument('--old-answers', action='store_true', help='таблица answers без новых столбцов recall/explore/engine (как до перевыполнения answers.sql)')
+p.add_argument('--old-answers', action='store_true', help='таблица answers без новых столбцов recall/explore/engine и fmt/typed/item (как до перевыполнения answers.sql)')
+p.add_argument('--no-typed-columns', action='store_true', help='таблица answers без столбцов fmt/typed/item (ответы вводом), но с recall/explore/engine')
 p.add_argument('--no-mock', action='store_true', help='таблиц пробного ЕНТ нет (supabase/mock.sql не выполнен)')
 ARGS = p.parse_args()
 TEACHERS = {e.strip().lower() for e in ARGS.teachers.split(',') if e.strip()}
@@ -283,12 +284,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/rest/v1/answers':
             if method == 'POST':
                 rows = self.body()
-                if ARGS.old_answers and any(k in r for r in rows if isinstance(r, dict) for k in ('recall', 'explore', 'engine')):
-                    return self.send(400, {'code': 'PGRST204', 'message': "Could not find the 'recall' column of 'answers' in the schema cache"})
+                missing = (('recall', 'explore', 'engine') if ARGS.old_answers else ()) + (('fmt', 'typed', 'item') if ARGS.old_answers or ARGS.no_typed_columns else ())
+                bad = next((k for r in rows if isinstance(r, dict) for k in missing if k in r), None) if isinstance(rows, list) else None
+                if bad:
+                    return self.send(400, {'code': 'PGRST204', 'message': "Could not find the '%s' column of 'answers' in the schema cache" % bad})
                 if not isinstance(rows, list) or any(not isinstance(r, dict) or r.get('mode') not in ('diag', 'practice', 'check') for r in rows):
                     return self.send(400, {'code': '23514', 'message': 'new row violates check constraint'})
                 ANSWERS.extend(dict(r, user_id=user['id']) for r in rows)
-                print('[answers] +%d (всего %d, случайных %d)' % (len(rows), len(ANSWERS), sum(1 for r in ANSWERS if r.get('explore'))), flush=True)
+                print('[answers] +%d (всего %d, случайных %d, вводом %d)' % (len(rows), len(ANSWERS), sum(1 for r in ANSWERS if r.get('explore')), sum(1 for r in ANSWERS if r.get('fmt') == 'typed')), flush=True)
                 return self.send(201)
             if method == 'GET':   # как RLS: только свои
                 return self.send(200, [r for r in ANSWERS if r['user_id'] == user['id']])

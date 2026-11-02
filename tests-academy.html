@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tamyr Academy — тесты</title>
-  <link rel="stylesheet" href="css/style.css?v=27">
+  <link rel="stylesheet" href="css/style.css?v=28">
 </head>
 <body>
   <main>
@@ -15,25 +15,26 @@
       <ul class="tests" id="tests"></ul>
     </section>
   </main>
-  <script src="js/data.js?v=27"></script>
-  <script src="js/data-ent.js?v=27"></script>
+  <script src="js/data.js?v=28"></script>
+  <script src="js/data-ent.js?v=28"></script>
   <script>window.Tamyr.LEARNER_KEY = 'tamyr.academy.test';</script>
-  <script src="js/i18n.js?v=27"></script>
-  <script src="js/engine.js?v=27"></script>
-  <script src="js/content.js?v=27"></script>
-  <script src="js/content-ent.js?v=27"></script>
-  <script src="js/gen-ent.js?v=27"></script>
-  <script src="js/kk-ent.js?v=27"></script>
-  <script src="js/kk.js?v=27"></script>
-  <script src="js/fsrs.js?v=27"></script>
-  <script src="js/learner.js?v=27"></script>
-  <script src="js/store.js?v=27"></script>
-  <script src="js/config.js?v=27"></script>
+  <script src="js/i18n.js?v=28"></script>
+  <script src="js/engine.js?v=28"></script>
+  <script src="js/content.js?v=28"></script>
+  <script src="js/content-ent.js?v=28"></script>
+  <script src="js/gen-ent.js?v=28"></script>
+  <script src="js/typed.js?v=28"></script>
+  <script src="js/kk-ent.js?v=28"></script>
+  <script src="js/kk.js?v=28"></script>
+  <script src="js/fsrs.js?v=28"></script>
+  <script src="js/learner.js?v=28"></script>
+  <script src="js/store.js?v=28"></script>
+  <script src="js/config.js?v=28"></script>
   <script>window.Tamyr.CONFIG = { supabaseUrl: '', supabaseKey: '' }; // тесты всегда идут без облака</script>
-  <script src="js/ent.js?v=27"></script>
-  <script src="tools/verify_gen.js?v=27"></script>
-  <script src="js/account.js?v=27"></script>
-  <script src="js/teacher.js?v=27"></script>
+  <script src="js/ent.js?v=28"></script>
+  <script src="tools/verify_gen.js?v=28"></script>
+  <script src="js/account.js?v=28"></script>
+  <script src="js/teacher.js?v=28"></script>
   <script>
     const T = window.Tamyr, L = T.learner;
     const out = document.getElementById('tests');
@@ -254,7 +255,7 @@
     });
 
     test('Все скрипты приложения разбираются без синтаксических ошибок', () => {
-      ['data', 'data-ent', 'i18n', 'engine', 'content', 'content-ent', 'kk-ent', 'kk', 'fsrs', 'learner', 'graph', 'store', 'config', 'account', 'app', 'teacher'].forEach(name => {
+      ['data', 'data-ent', 'i18n', 'engine', 'content', 'content-ent', 'typed', 'kk-ent', 'kk', 'fsrs', 'learner', 'graph', 'store', 'config', 'account', 'app', 'teacher'].forEach(name => {
         const xhr = new XMLHttpRequest();
         xhr.open('GET', 'js/' + name + '.js?t=' + Date.now(), false); xhr.send();
         assert(xhr.status === 200, 'нет файла ' + name);
@@ -464,6 +465,69 @@
       eq(T.parseMockWrong('  ', 40), null);
       eq(T.parseMockWrong('41', 40), { bad: true });
       eq(T.parseMockWrong('3, x', 40), { bad: true });
+    });
+
+    /* ---------- Ответ вводом (js/typed.js) ---------- */
+    const TY = T.typed;
+    test('Ввод: число разбирается в любой привычной записи', () => {
+      const v = s => { const p = TY.parse(s); return p && Math.round(p.v * 1e6) / 1e6; };
+      eq(['12', ' −4 ', '-4', '–4', '+3', '3/4', '−3/4', '0,5', '0.5', ',5', '9 801', '1 / 2', 'x = 3', 'x=−2', 'd = 4', '12 см', '30 см²', '27см3', '70°', '70 градусов'].map(v),
+        [12, -4, -4, -4, 3, 0.75, -0.75, 0.5, 0.5, 0.5, 9801, 0.5, 3, -2, 4, 12, 30, 27, 70, 70]);
+      eq(['', '  ', 'abc', '3/0', '1/2/3', '2x', '√2', '3 и 5', '(1; 3)', '1e5', '--3', '3,'].map(TY.parse), Array(12).fill(null));
+      eq(TY.parse('≈2,67'), { v: 2.67, approx: true });
+    });
+    test('Ввод: верный ответ, известная ловушка (с меткой ошибки) и незнакомая ошибка', () => {
+      const q = T.QUESTION.frac1; // 1/2 + 1/3: 5/6; ловушки 2/5 (сложили «поперёк»), 2/6 (сложили числители)
+      eq(TY.check(q, '5/6'), { ok: true, trap: null });
+      eq(TY.check(q, '10/12').ok, true, 'та же дробь, не сокращённая: ');
+      eq(TY.check(q, '2/5').trap.mis, 'frac_add_across');
+      eq(TY.check(q, '1/3').trap.mis, 'frac_add_numerators', '2/6 = 1/3: ');
+      eq(TY.check(q, '0,83'), { ok: false, trap: null }, 'округление точного ответа не засчитывается: ');
+      eq(TY.check(q, '7/12'), { ok: false, trap: null });
+      eq(TY.check(q, 'пять шестых'), null);
+      eq(TY.check(T.QUESTION.neg1, '-4').ok, true, 'минус с клавиатуры: ');
+      eq(TY.check(T.QUESTION.planmet1, '10').ok, true, 'без единиц: ');
+      eq(TY.check(T.QUESTION.planmet1, '10 см').ok, true, 'с единицами: ');
+      eq(TY.check(T.QUESTION.pct5, '2,7').trap.mis, 'pct_divide_wrong', 'ловушка «≈2,67» ловит округлённое по-другому: ');
+    });
+    test('Ввод: без вариантов не даём задачи, где ответ — не одно число', () => {
+      eq(['pow4', 'ineq6', 'irr4', 'root6', 'trig1', 'vec4', 'exp2'].filter(id => TY.can(T.QUESTION[id])), [], 'нечисловые варианты: ');
+      eq(['arith1', 'frac1', 'neg1', 'pct5', 'planmet1', 'exp1', 'log4'].filter(id => !TY.can(T.QUESTION[id])), [], 'числовые: ');
+      assert(!TY.can({ type: 'multi', options: [{ t: '1', ok: true }, { t: '2' }] }), 'задание «несколько ответов»');
+      const n = T.QUESTIONS.filter(TY.can).length;
+      assert(n >= 90, 'задач банка с ответом вводом слишком мало: ' + n);
+    });
+    const typedSound = q => { // верный ответ вписывается, каждая ловушка узнаётся и ни одна не совпадает с верным ответом
+      const ok = q.options.find(o => o.ok), v = TY.parse(ok.t).v;
+      if (!TY.check(q, ok.t).ok) return 'верный ответ не засчитан';
+      for (const tr of (q.traps || q.options.filter(o => !o.ok))) {
+        const p = TY.parse(tr.t);
+        if (p.approx ? Math.abs(p.v - v) < 0.05 + 1e-9 : Math.abs(p.v - v) < 1e-9) return `ловушка «${tr.t}» равна верному ответу`;
+        const r = TY.check(q, tr.t.replace(/^≈/, ''));
+        if (!r || r.ok || !r.trap) return `ловушка «${tr.t}» не узнана`;
+        if (tr.mis && TY.parse(r.trap.t).v === p.v && !r.trap.mis) return `у ловушки «${tr.t}» потерялась метка`;
+      }
+      return null;
+    };
+    test('Ввод: в каждой задаче банка с ответом вводом ловушки не совпадают с верным ответом', () => {
+      eq(T.QUESTIONS.filter(TY.can).map(q => { const e = typedSound(q); return e && q.id + ': ' + e; }).filter(Boolean), []);
+    });
+    test('Ввод: генераторы — по 300 задач на тему: ответ вводом проверяется так же надёжно, ловушки сохраняются все', () => {
+      const bad = [];
+      let typed = 0;
+      Object.entries(T.GENERATORS).forEach(([topic, g]) => {
+        const rand = T.rng(7);
+        for (let i = 0; i < 300; i++) {
+          const q = g(rand);
+          assert(q.traps && q.traps.length >= 3 && q.options.slice(1).every(o => q.traps.includes(o)), topic + ': варианты не из ловушек');
+          if (!TY.can(q)) continue;
+          typed++;
+          const e = typedSound(q);
+          if (e) bad.push(`${topic}: «${q.text}» — ${e}`);
+        }
+      });
+      eq(bad.slice(0, 5), []);
+      assert(typed > 3000, 'сгенерированных задач с ответом вводом слишком мало: ' + typed);
     });
 
     L.reset();

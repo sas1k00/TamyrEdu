@@ -99,6 +99,39 @@ const BASE = (process.argv[2] || 'http://127.0.0.1:8765').replace(/\/$/, '');
     await ctx.close();
   }
 
+  // ответ вводом в практике: Math.random = 0 — генератор даёт 1/2 + 1/3, и задача точно приходит без вариантов
+  console.log('Ответ вводом:');
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await ctx.addInitScript(() => { Math.random = () => 0; });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on('pageerror', e => errors.push(e.message));
+    await p.goto(`${BASE}/index.html#start`);          // ученик без диагностики — практика доступна сразу
+    await p.fill('#name', 'Тест');
+    await p.check('input[name=goal][value=none]');
+    await p.click('#start-form button[type=submit]');
+    await p.waitForTimeout(300);
+    await p.goto(`${BASE}/index.html#practice/frac`);
+    await p.waitForTimeout(300);
+    report(!!(await p.$('#typed')) && !(await p.$('.opt')), 'задача пришла без вариантов, с полем для ответа');
+    report(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'поле на телефоне без горизонтальной прокрутки');
+    await p.fill('#typed', 'пять шестых'); await p.press('#typed', 'Enter');
+    report(await p.isVisible('#typed-err') && !(await p.$('.feedback')), 'не число — просим исправить, ответ не засчитан');
+    await p.fill('#typed', '2'); await p.click('[data-k="/"]'); await p.type('#typed', '5'); await p.press('#typed', 'Enter');
+    await p.waitForTimeout(100);
+    const bad = await p.textContent('.feedback');
+    report(!!(await p.$('.typed.is-bad')) && /типичную ошибку/.test(bad) && bad.includes('5/6'), 'кнопка «/» вставляет символ; 2/5 узнано как типичная ошибка, показан верный ответ');
+    await p.click('#next'); await p.waitForTimeout(100);
+    await p.fill('#typed', '10/12'); await p.click('#typed-form button[type=submit]'); await p.waitForTimeout(100);
+    report(!!(await p.$('.typed.is-ok')) && /Верно/.test(await p.textContent('.feedback')), '10/12 засчитано как 5/6');
+    await p.click('#next'); await p.waitForTimeout(100);
+    await p.click('#skip'); await p.waitForTimeout(100);
+    report(/Ничего страшного/.test(await p.textContent('.feedback')), '«Не знаю» работает и без вариантов');
+    errors.forEach(e => report(false, `ошибка JavaScript: ${e}`));
+    await ctx.close();
+  }
+
   await browser.close();
   console.log(failed ? `\nПровалено: ${failed}` : '\nВсё прошло.');
   process.exit(failed ? 1 : 0);

@@ -25,6 +25,13 @@ alter table public.answers add column if not exists recall real check (recall be
 alter table public.answers add column if not exists explore boolean not null default false;
 -- версия движка (T.ENGINE): отличать ответы до и после изменения алгоритма
 alter table public.answers add column if not exists engine text check (length(engine) <= 16);
+-- ответ вводом (js/typed.js): в практике половина задач с числовым ответом идёт без вариантов.
+-- fmt = 'typed' — ученик вписал ответ сам: choice тогда пустой, а то, что он написал (как есть), лежит в typed
+-- (typed пустой — нажал «Не знаю»); mis — метка, если число совпало с известной ловушкой.
+alter table public.answers add column if not exists fmt text not null default 'choice' check (fmt in ('choice', 'typed'));
+alter table public.answers add column if not exists typed text check (length(typed) <= 32);
+-- текст сгенерированной задачи: question у них одинаков (gen:<тема>), а без текста вписанное число не с чем сверить
+alter table public.answers add column if not exists item text check (length(item) <= 200);
 create index if not exists answers_user_at on public.answers (user_id, at);
 create index if not exists answers_question on public.answers (question);
 
@@ -42,6 +49,6 @@ grant select, insert, delete on public.answers to authenticated;
 -- Читает только владелец проекта (SQL Editor / Table Editor), ученикам представление недоступно.
 create or replace view public.answers_export with (security_invoker = true) as
 select left(md5(user_id::text), 10) as student, date(at at time zone 'Asia/Almaty') as day,
-       mode, topic, question, choice, correct, mis, hints, ms, lang, recall, explore, engine
+       mode, topic, question, choice, correct, mis, hints, ms, lang, recall, explore, engine, fmt, typed, item
 from public.answers;
 revoke all on public.answers_export from anon, authenticated;

@@ -23,7 +23,7 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
 const SYSTEM = `You are Tamyr, a patient math tutor for Kazakhstani high-school students preparing for the ENT (ҰБТ) exam.
-A student just answered a multiple-choice problem. You receive the problem, the options, the correct answer, the student's choice, and the official solution.
+A student just answered a problem: either chose one of the options, or typed their own answer when no options were shown. You receive the problem, the options (if they were shown), the correct answer, the student's answer, and the official solution.
 
 Your job: explain the student's mistake so they understand it and won't repeat it.
 - Start from what the student most likely thought, in one or two sentences ("Похоже, ты…"). If they chose "не знаю", skip this and explain how to start.
@@ -36,7 +36,7 @@ Your job: explain the student's mistake so they understand it and won't repeat i
 
 type Input = {
   lang: "ru" | "kk"; topic: string; rule: string; question: string;
-  options: string[]; correct: string; chosen: string | null;
+  options: string[]; correct: string; chosen: string | null; typed: boolean;
   mistake: { title: string; fix: string } | null; solution: string[];
 };
 
@@ -48,11 +48,12 @@ function clean(b: any): Input | null {
   const out: Input = {
     lang: b.lang === "kk" ? "kk" : "ru",
     topic: s(b.topic, 80), rule: s(b.rule), question: s(b.question),
-    options, correct: s(b.correct, 120), chosen: b.chosen == null ? null : s(b.chosen, 120),
+    options, correct: s(b.correct, 120), chosen: b.chosen == null ? null : s(b.chosen, 120), typed: b.typed === true,
     mistake: b.mistake && typeof b.mistake === "object" ? { title: s(b.mistake.title, 160), fix: s(b.mistake.fix) } : null,
     solution: Array.isArray(b.solution) ? b.solution.slice(0, 8).map((x: unknown) => s(x, 200)) : [],
   };
-  return out.question && out.correct && options.length >= 2 ? out : null;
+  // ответ вводом: вариантов ученик не видел — они не обязательны
+  return out.question && out.correct && (options.length >= 2 || out.typed) ? out : null;
 }
 
 function prompt(x: Input): string {
@@ -61,9 +62,9 @@ function prompt(x: Input): string {
     `Topic: ${x.topic}`,
     x.rule && `Rule of the topic: ${x.rule}`,
     `Problem: ${x.question}`,
-    `Options: ${x.options.join(" | ")}`,
+    x.typed ? "No options were shown: the student typed their own answer." : `Options: ${x.options.join(" | ")}`,
     `Correct answer: ${x.correct}`,
-    `Student's choice: ${x.chosen ?? "не знаю (didn't know)"}`,
+    `${x.typed ? "Student's typed answer" : "Student's choice"}: ${x.chosen ?? "не знаю (didn't know)"}`,
     x.mistake && `Known typical mistake behind this choice: ${x.mistake.title}. ${x.mistake.fix}`,
     x.solution.length && `Official solution:\n${x.solution.map((st, i) => `${i + 1}. ${st}`).join("\n")}`,
   ].filter(Boolean).join("\n");

@@ -216,16 +216,18 @@
   const near = n => [[num(n + 1)], [num(n - 1)], [num(n + 2)], [num(n - 2)]];
 
   let seq = 0;
-  /* wrongs: [[текст, меткаОшибки?], …] — берём первые три, которые не совпали с верным ответом и друг с другом. */
+  /* wrongs: [[текст, меткаОшибки?], …] — в варианты идут первые три, которые не совпали с верным ответом и друг с другом.
+     Все ловушки (traps) остаются в задаче: когда ученик вписывает ответ сам (js/typed.js), его число сверяется со всеми. */
   function build(topic, text, correct, wrongs, sol) {
     const seen = new Set([correct]);
-    const options = [{ t: correct, ok: true }];
+    const traps = [];
     wrongs.forEach(([t, mis]) => {
-      if (options.length >= 4 || seen.has(t)) return;
+      if (seen.has(t)) return;
       seen.add(t);
-      options.push(mis ? { t, mis } : { t });
+      traps.push(mis ? { t, mis } : { t });
     });
-    return { id: 'gen:' + topic + ':' + (++seq), topic, text, options, sol, gen: true };
+    const options = [{ t: correct, ok: true }].concat(traps.slice(0, 3));
+    return { id: 'gen:' + topic + ':' + (++seq), topic, text, options, traps, sol, gen: true };
   }
 
   /* Текст генератора на текущем языке: уроки и банк переводит kk.js, а здесь строки собираются на лету. */

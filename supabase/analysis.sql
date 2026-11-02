@@ -42,7 +42,7 @@ group by 1;
 -- 4. Задачи, которые стоит пересмотреть: слишком лёгкие, слишком трудные или с «ловушкой», которая ловит всех.
 -- Нужно хотя бы 20 ответов на задачу (n), иначе процент случайный.
 select question, topic, count(*) as n, round(avg(correct::int) * 100) as correct_pct,
-       round(avg((choice is null)::int) * 100) as dont_know_pct,
+       round(avg((choice is null and typed is null)::int) * 100) as dont_know_pct,
        round(avg(ms) / 1000) as avg_seconds
 from public.answers
 where question not like 'gen:%'
@@ -78,3 +78,40 @@ with d as (
 select d.verdict, count(*) as n, round(avg(e.ent_wrong::int) * 100) as ent_wrong_pct
 from d join e using (user_id, topic)
 group by 1 order by 3 desc;
+
+-- 8. Вписанный ответ против выбора из вариантов (практика). Формат выбирается случайно для каждой задачи,
+-- поэтому сравниваются одни и те же ученики на одних и тех же темах. Разница choice_pct − typed_pct показывает,
+-- сколько верных ответов в формате с вариантами — угадывание и узнавание, а не умение решить.
+-- Только задачи, которые бывают в обоих форматах (у других тем typed_n = 0). Смотрите на n в обоих столбцах.
+select topic,
+       count(*) filter (where fmt = 'choice')                                    as choice_n,
+       round(avg(correct::int) filter (where fmt = 'choice') * 100)            as choice_pct,
+       count(*) filter (where fmt = 'typed')                                     as typed_n,
+       round(avg(correct::int) filter (where fmt = 'typed') * 100)             as typed_pct,
+       round(avg((typed is null)::int) filter (where fmt = 'typed') * 100)     as typed_dont_know_pct
+from public.answers
+where mode = 'practice' and not explore
+group by 1 having count(*) filter (where fmt = 'typed') > 0
+order by avg(correct::int) filter (where fmt = 'choice') - avg(correct::int) filter (where fmt = 'typed') desc nulls last;
+
+-- 9. Новые ошибки: неверные вписанные ответы, которых нет среди известных ловушек (mis пустой и число не верное).
+-- Если одно и то же неверное число на одной задаче пишут разные ученики — это кандидат в новую ошибку мышления:
+-- разобрать с учителем, добавить вариант с меткой в банк или генератор. students ≥ 2 — уже не случайная описка.
+select topic, coalesce(item, question) as task, typed, count(*) as n, count(distinct user_id) as students
+from public.answers
+where fmt = 'typed' and not correct and typed is not null and mis is null
+group by 1, 2, 3 having count(distinct user_id) >= 2
+order by students desc, n desc limit 50;
+
+-- 10. Сравнение классов пилота (например, НИШ и обычная школа): активность, точность в обоих форматах, ловушки.
+-- Класс — по названию, которое дал учитель (назовите классы понятно: «НИШ 10А», «Школа №12 10Б»).
+-- Ученик в двух классах посчитается в обоих.
+select c.name as class, count(distinct a.user_id) as students, count(*) as answers,
+       round(avg(a.correct::int) filter (where a.mode = 'diag') * 100)                        as diag_pct,
+       round(avg(a.correct::int) filter (where a.mode = 'practice' and a.fmt = 'choice') * 100) as practice_choice_pct,
+       round(avg(a.correct::int) filter (where a.mode = 'practice' and a.fmt = 'typed') * 100)  as practice_typed_pct,
+       round(avg((a.mis is not null)::int) filter (where not a.correct) * 100)                 as known_trap_pct
+from public.classes c
+join public.class_members m on m.class_id = c.id
+join public.answers a on a.user_id = m.user_id and a.at >= m.joined_at
+group by c.id, c.name order by c.name;

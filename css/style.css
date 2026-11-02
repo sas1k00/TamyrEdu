@@ -306,6 +306,16 @@ textarea { width: 100%; font: .8rem/1.4 ui-monospace, Consolas, monospace; paddi
 .feedback .row { margin: 12px 0 0; }
 .opt:disabled { cursor: default; opacity: .75; }
 .opt.is-ok, .opt.is-bad { opacity: 1; }
+/* Ответ вводом (js/typed.js) */
+.typed { margin-bottom: 12px; }
+.typed-row { display: flex; gap: 10px; }
+.typed input { flex: 1; min-width: 0; font: inherit; font-size: 1.2rem; padding: 12px 14px; border-radius: 12px; border: 2px solid var(--line); background: var(--surface-2); color: var(--ink); }
+.typed input:focus { outline: none; border-color: var(--accent); }
+.typed.is-ok input { border-color: var(--ok); background: var(--ok-soft); color: var(--ink); }
+.typed.is-bad input { border-color: var(--gap); background: var(--gap-soft); color: var(--ink); }
+.typed-keys { display: flex; gap: 8px; margin: 8px 0 0; }
+.typed-keys .btn { min-width: 44px; font-size: 1.1rem; justify-content: center; }
+.typed p { margin: 8px 0 0; }
 
 /* История */
 .log { list-style: none; padding: 0; margin: 0; }

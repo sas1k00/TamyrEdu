@@ -287,7 +287,9 @@
 
   const QKEY = 'tamyr.answers', QUEUE_MAX = 500;
   let queue = [], logTimer = null, logOff = false, flushing = false;
-  let oldTable = false; // в таблице ещё нет новых столбцов recall/explore/engine (answers.sql не перевыполнен) — шлём без них, ответы не теряем
+  /* Таблица могла остаться от старой версии answers.sql — тогда сервер не знает новых столбцов. Шлём без них, ответы не теряем.
+     0 — все столбцы; 1 — без fmt/typed/item (ответы вводом); 2 — ещё и без recall/explore/engine. */
+  let oldTable = 0;
   try { queue = JSON.parse(localStorage.getItem(QKEY) || '[]'); if (!Array.isArray(queue)) queue = []; } catch (e) { queue = []; }
   function saveQueue() { try { localStorage.setItem(QKEY, JSON.stringify(queue)); } catch (e) { /* нет хранилища — очередь живёт в памяти */ } }
   async function flushAnswers() {
@@ -298,8 +300,11 @@
     flushing = true;
     try {
       await authed('/rest/v1/answers', { method: 'POST', headers: { Prefer: 'return=minimal' },
-        body: batch.map(({ uid: _, recall, explore, engine, ...r }) => (oldTable ? r
-          : Object.assign(r, { recall: recall === undefined ? null : recall, explore: !!explore, engine: engine || null }))) });
+        body: batch.map(({ uid: _, recall, explore, engine, fmt, typed, item, ...r }) => {
+          if (oldTable < 2) Object.assign(r, { recall: recall === undefined ? null : recall, explore: !!explore, engine: engine || null });
+          if (oldTable < 1) Object.assign(r, { fmt: fmt || 'choice', typed: typed == null ? null : typed, item: item == null ? null : item });
+          return r;
+        }) });
       const sent = new Set(batch);
       queue = queue.filter(r => !sent.has(r)); saveQueue();
       if (queue.some(r => r.uid === uid)) setTimeout(flushAnswers, 0);
@@ -308,7 +313,7 @@
       if (e.status === 404) logOff = true;
       // сервер отверг сами записи (не прошли проверки таблицы) — выбрасываем пачку, иначе она застрянет навсегда
       // 400 из-за новых столбцов — повторяем ту же пачку без них
-      else if (e.status === 400 && !oldTable) { oldTable = true; flushing = false; return flushAnswers(); }
+      else if (e.status === 400 && oldTable < 2) { oldTable++; flushing = false; return flushAnswers(); }
       else if (e.status === 400 || e.status === 409 || e.status === 422) { const bad = new Set(batch); queue = queue.filter(r => !bad.has(r)); saveQueue(); }
     } finally { flushing = false; }
   }

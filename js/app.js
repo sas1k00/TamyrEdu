@@ -228,13 +228,17 @@
     if (stop) stop.addEventListener('click', finishDiagnostic);
   }
 
-  /* Один ответ — в журнал (только у вошедших). choice — номер варианта в банке, а не на экране: так ответы сравнимы между учениками. */
-  function logAnswer(mode, topic, q, opt, hints, shown, explore) {
+  /* Один ответ — в журнал (только у вошедших). choice — номер варианта в банке, а не на экране: так ответы сравнимы между учениками.
+     typed — ответ вводом ({ text } — что написал ученик; text = null — «Не знаю»): тогда choice пустой, а число лежит в typed.
+     У сгенерированных задач question одинаков у всех (gen:<тема>), поэтому пишем и сам текст задачи (item). */
+  function logAnswer(mode, topic, q, opt, hints, shown, explore, typed) {
     // в повторениях пишем и прогноз FSRS «вспомнит ли» — по нему потом проверим, насколько модель точна для наших учеников
     const r = mode === 'check' && L.exists() ? T.fsrs.retrievability(L.topic(topic).fs, L.now()) : null;
-    A.logAnswer({ mode, topic, question: q.gen ? 'gen:' + topic : q.id, choice: opt ? q.options.indexOf(opt) : null,
+    const choice = typed || !opt ? -1 : q.options.indexOf(opt);
+    A.logAnswer({ mode, topic, question: q.gen ? 'gen:' + topic : q.id, choice: choice >= 0 ? choice : null,
       correct: !!(opt && opt.ok), mis: opt && opt.mis ? opt.mis : null, hints, ms: Math.min(3600000, Date.now() - shown),
-      recall: r === null ? null : Math.round(r * 1000) / 1000, explore: !!explore });
+      recall: r === null ? null : Math.round(r * 1000) / 1000, explore: !!explore,
+      fmt: typed ? 'typed' : 'choice', typed: typed && typed.text ? typed.text.slice(0, 32) : null, item: q.gen ? q.text.slice(0, 200) : null });
   }
 
   function finishDiagnostic() {
@@ -392,7 +396,26 @@
       s.q = T.nextQuestion(s.topic, L.topic(s.topic).seen, Math.random, s.lastMis ? [s.lastMis] : mine);
     }
     s.opts = T.shuffle(s.q.options, Math.random);
+    // половина задач с числовым ответом в практике — без вариантов, ответ вписывается (js/typed.js). Случайная задача — всегда с вариантами.
+    s.typed = s.mode === 'practice' && !s.explore && T.typed.can(s.q) && Math.random() < T.typed.RATE;
+    s.input = '';
     s.hints = 0; s.answered = null; s.flagged = null; s.ai = null; s.shown = Date.now();
+  }
+
+  /* Поле для ответа вводом. Кнопки «−» и «/» — на телефонной клавиатуре их часто не найти. */
+  function typedBox(s) {
+    const a = s.answered;
+    const val = a ? (a.typed === null ? '' : a.typed) : s.input;
+    return `<form class="typed ${a ? (a.ok ? 'is-ok' : 'is-bad') : ''}" id="typed-form" autocomplete="off" novalidate>
+        <div class="typed-row">
+          <input id="typed" type="text" enterkeyhint="done" autocapitalize="off" spellcheck="false" maxlength="32" value="${esc(val)}"
+            placeholder="${a && a.typed === null ? t('Без ответа') : t('Твой ответ')}" aria-label="${t('Твой ответ')}" aria-describedby="typed-help" ${a ? 'disabled' : ''}>
+          ${a ? '' : `<button class="btn primary" type="submit">${t('Ответить')}</button>`}
+        </div>
+        ${a ? '' : `<div class="typed-keys" aria-hidden="true">${['−', '/', ','].map(k => `<button type="button" class="btn small" tabindex="-1" data-k="${k}">${k}</button>`).join('')}</div>
+        <p class="muted small" id="typed-help">${t('Вариантов нет — впиши ответ сам. Дробь — через «/», например 3/4; десятичная — через запятую: 0,5.')}${T.typed.hasUnit(s.q) ? ' ' + t('Единицы измерения писать не нужно.') : ''}</p>
+        <p class="bad-msg small" id="typed-err" role="alert" hidden>${t('Это не число. Впиши, например, 12, −3, 3/4 или 0,5.')}</p>`}
+      </form>`;
   }
 
   function viewSession(mode, id) {
@@ -443,7 +466,7 @@
         <p class="why">${s.explore ? t('Случайная задача из другой темы. На прогресс не влияет — она помогает проверять, насколько точно Tamyr находит пробелы.')
           : practice ? t('Практика: {n} верных подряд без подсказок — и тема освоена', { n: L.NEED }) : t('Проверка без подсказок: два вопроса')}</p>
         <h2 class="qtext">${math(s.q.text)}</h2>
-        <div class="options">${s.opts.map((o, i) => `<button class="opt ${a && o.ok ? 'is-ok' : ''} ${a && a.idx === i && !o.ok ? 'is-bad' : ''}" data-i="${i}" ${a ? 'disabled' : ''}><span class="key">${'АБВГ'[i]}</span><span>${math(o.t)}</span></button>`).join('')}</div>
+        ${s.typed ? typedBox(s) : `<div class="options">${s.opts.map((o, i) => `<button class="opt ${a && o.ok ? 'is-ok' : ''} ${a && a.idx === i && !o.ok ? 'is-bad' : ''}" data-i="${i}" ${a ? 'disabled' : ''}><span class="key">${'АБВГ'[i]}</span><span>${math(o.t)}</span></button>`).join('')}</div>`}
         ${a ? '' : `<div class="row">
           ${practice ? `<button class="btn small" id="hint" ${s.hints >= 3 ? 'disabled' : ''}>${hintLabel}</button>` : ''}
           <button class="btn ghost small" id="skip">${t('Не знаю')}</button>
@@ -453,11 +476,11 @@
         <a class="btn ghost small" href="#home">${t('На главную')}</a>
       </section>`;
 
-    const answer = idx => {
-      const opt = idx === null ? null : s.opts[idx];
+    // opt — выбранный вариант; при ответе вводом — верный вариант, совпавшая ловушка или { t: что вписано }; null — «Не знаю»
+    const answer = (opt, typed) => {
       const ok = !!(opt && opt.ok);
-      s.answered = { idx, ok, opt };
-      logAnswer(s.mode, s.explore || s.topic, s.q, opt, s.hints, s.shown, !!s.explore);
+      s.answered = { idx: opt ? s.opts.indexOf(opt) : null, ok, opt, typed: s.typed ? (typed === undefined ? null : typed) : undefined };
+      logAnswer(s.mode, s.explore || s.topic, s.q, opt, s.hints, s.shown, !!s.explore, s.typed ? { text: s.answered.typed } : null);
       s.n++;
       if (s.explore) return renderSession(); // случайная задача: только в журнал, прогресс и серия не меняются
       s.lastMis = !ok && opt && opt.mis ? opt.mis : null;
@@ -470,8 +493,26 @@
       renderSession();
     };
     if (!a) {
-      app.querySelectorAll('.opt').forEach(b => b.addEventListener('click', () => answer(Number(b.dataset.i))));
+      app.querySelectorAll('.opt').forEach(b => b.addEventListener('click', () => answer(s.opts[Number(b.dataset.i)])));
       app.querySelector('#skip').addEventListener('click', () => answer(null));
+      const form = app.querySelector('#typed-form');
+      if (form) {
+        const input = form.querySelector('#typed'), err = form.querySelector('#typed-err');
+        input.addEventListener('input', () => { s.input = input.value; err.hidden = true; });
+        form.querySelectorAll('[data-k]').forEach(b => b.addEventListener('click', () => {
+          const p = input.selectionStart == null ? input.value.length : input.selectionStart, q = input.selectionEnd == null ? p : input.selectionEnd;
+          input.value = input.value.slice(0, p) + b.dataset.k + input.value.slice(q);
+          s.input = input.value; err.hidden = true;
+          input.focus(); input.setSelectionRange(p + 1, p + 1);
+        }));
+        form.addEventListener('submit', e => {
+          e.preventDefault();
+          const text = input.value.trim(), r = text ? T.typed.check(s.q, text) : null;
+          if (!r) { err.hidden = false; input.focus(); return; } // не число — ничего не засчитываем
+          answer(r.ok ? s.q.options.find(o => o.ok) : r.trap || { t: text }, text);
+        });
+        input.focus({ preventScroll: true });
+      }
       const hint = app.querySelector('#hint');
       if (hint) hint.addEventListener('click', () => { s.hints++; renderSession(); });
     } else {
@@ -508,7 +549,7 @@
     try {
       result = { text: await A.explain({
         lang: T.lang, topic: tp.title, rule: tp.rule, question: q.text, options: s.opts.map(o => o.t),
-        correct: s.opts.find(o => o.ok).t, chosen: a.opt ? a.opt.t : null,
+        correct: s.opts.find(o => o.ok).t, chosen: a.typed !== undefined ? a.typed : a.opt ? a.opt.t : null, typed: a.typed !== undefined,
         mistake: m ? { title: m.title, fix: m.fix } : null, solution: sol
       }) };
     } catch (e) {
