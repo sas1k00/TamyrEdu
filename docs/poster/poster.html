@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Tamyr — постер</title>
+<meta name="viewport" content="width=1000">
+<style>
+  :root{
+    --bg:#f6f4ef; --surface:#ffffff; --ink:#1d1f1c; --ink-2:#5b5f58; --line:#e2ddd2;
+    --accent:#1f6f5c; --accent-deep:#16513f; --accent-soft:#dcefe8; --inf:#a9d8bb;
+    --gap:#d9534f; --gap-soft:#f8d7d5;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#cfcbc2}
+  body{display:flex;justify-content:center}
+  .poster{
+    width:1000px;height:1414px;background:var(--bg);color:var(--ink);
+    font-family:Inter,system-ui,"Segoe UI",Roboto,Arial,sans-serif;
+    padding:46px 64px 42px;display:flex;flex-direction:column;position:relative;overflow:hidden;
+  }
+  /* quiet texture: faint root lines in the corner, echoing the logo */
+  .poster::before{
+    content:"";position:absolute;right:-120px;top:-120px;width:520px;height:520px;border-radius:50%;
+    background:radial-gradient(circle at 50% 50%,var(--accent-soft) 0,rgba(220,239,232,0) 68%);pointer-events:none;
+  }
+  header{display:flex;align-items:center;justify-content:space-between;position:relative}
+  .brand{display:flex;align-items:center;gap:16px}
+  .mark{width:56px;height:56px;border-radius:14px;background:var(--accent);display:grid;place-items:center}
+  .brand b{font-size:34px;font-weight:800;letter-spacing:-.02em}
+  .tag{font-size:16px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);text-align:right;line-height:1.4}
+
+  .hero{margin-top:26px;position:relative}
+  .hero .lead{font-size:42px;font-weight:600;letter-spacing:-.02em;color:var(--ink-2);line-height:1.1}
+  .hero .big{font-size:150px;font-weight:900;letter-spacing:-.05em;color:var(--accent);line-height:1;margin-top:2px;white-space:nowrap}
+  .hero .kk{margin-top:8px;font-size:23px;color:var(--ink-2)}
+  .hero .kk b{color:var(--ink);font-weight:700}
+
+  .stat{margin-top:16px;display:flex;align-items:center;gap:20px;padding:10px 22px;background:var(--surface);border:1px solid var(--line);border-radius:18px}
+  .stat .n{font-size:54px;font-weight:900;color:var(--gap);letter-spacing:-.04em;line-height:1}
+  .stat p{font-size:20px;line-height:1.35;color:var(--ink-2)}
+  .stat p b{color:var(--ink);font-weight:700}
+
+  .diagram{margin-top:16px;flex:0 0 auto}
+  .diagram svg{display:block;width:100%;height:auto}
+
+  .verdicts{margin-top:6px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .card{border-radius:20px;padding:18px 24px}
+  .card .lbl{font-size:15px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px}
+  .card .q{font-size:25px;font-weight:700;line-height:1.2;letter-spacing:-.01em}
+  .card .s{font-size:17px;margin-top:8px;line-height:1.35}
+  .card.old{background:var(--surface);border:2px solid var(--line)}
+  .card.old .lbl{color:var(--gap)} .card.old .q{color:var(--ink-2)} .card.old .s{color:var(--ink-2)}
+  .card.new{background:var(--accent);color:#fff}
+  .card.new .lbl{color:var(--inf)} .card.new .s{color:#dcefe8}
+
+  .steps{margin-top:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .step .num{width:44px;height:44px;border-radius:50%;border:3px solid var(--accent);color:var(--accent);font-weight:800;font-size:22px;display:grid;place-items:center;margin-bottom:10px}
+  .step h3{font-size:24px;font-weight:800;letter-spacing:-.01em;margin-bottom:6px}
+  .step p{font-size:18px;line-height:1.35;color:var(--ink-2)}
+
+  footer{margin-top:auto;display:flex;align-items:center;gap:24px;padding-top:16px;border-top:2px solid var(--ink)}
+  .qr{flex:0 0 auto;width:116px;height:116px;background:#fff;padding:8px;border-radius:12px;border:1px solid var(--line)}
+  .qr svg{width:100%;height:100%;display:block}
+  .cta{flex:1}
+  .cta .t{font-size:32px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+  .cta .u{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:19px;color:var(--accent);margin-top:6px;font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .chip{font-size:16px;font-weight:600;padding:5px 12px;border-radius:99px;background:var(--accent-soft);color:var(--accent-deep)}
+  .team{flex:0 0 auto;text-align:right;font-size:16px;line-height:1.5;color:var(--ink-2)}
+  .team b{display:block;color:var(--ink);font-size:15px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px}
+</style>
+</head>
+<body>
+<main class="poster">
+
+  <header>
+    <div class="brand">
+      <div class="mark">
+        <svg width="36" height="36" viewBox="96 80 320 350" fill="none" stroke="#fff" stroke-width="30" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M256 102V410"/><path d="M150 104L250 168"/><path d="M362 104L262 168"/>
+          <path d="M250 258L120 410"/><path d="M262 258L392 410"/>
+        </svg>
+      </div>
+      <b>Tamyr</b>
+    </div>
+    <div class="tag">VentureHack 2026<br>EduTech · математика · ЕНТ</div>
+  </header>
+
+  <section class="hero">
+    <div class="lead">Мы находим не ошибку —</div>
+    <div class="big">её корень.</div>
+    <div class="kk"><b>Тамыр</b> (қаз.) — корень. Қатені емес, себебін табамыз.</div>
+  </section>
+
+  <section class="stat">
+    <div class="n">50%</div>
+    <p>школьников Казахстана достигли базового уровня по математике в PISA&nbsp;2022. <b>В странах ОЭСР — 69%.</b></p>
+  </section>
+
+  <section class="diagram" aria-label="Схема: ошибка на поверхности, корень глубже">
+    <svg viewBox="0 0 872 425" role="img">
+      <text x="436" y="20" text-anchor="middle" font-size="18" fill="#5b5f58" font-family="Inter,sans-serif" font-weight="500">8 класс · здесь ученик ошибается</text>
+      <rect x="256" y="30" width="360" height="60" rx="30" fill="#d9534f"/>
+      <text x="436" y="69" text-anchor="middle" font-size="27" fill="#fff" font-family="Inter,sans-serif" font-weight="800" letter-spacing="-0.3">Квадратные уравнения</text>
+
+      <line x1="0" y1="128" x2="872" y2="128" stroke="#1d1f1c" stroke-opacity=".28" stroke-width="2" stroke-dasharray="3 9" stroke-linecap="round"/>
+      <text x="0" y="116" font-size="16" fill="#5b5f58" font-family="Inter,sans-serif" font-weight="700" letter-spacing="1.6">ОБЫЧНЫЙ ТЕСТ ВИДИТ ТОЛЬКО ЭТО ↑</text>
+      <text x="0" y="154" font-size="16" fill="#1f6f5c" font-family="Inter,sans-serif" font-weight="700" letter-spacing="1.6">TAMYR ИДЁТ ГЛУБЖЕ ↓</text>
+
+      <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M436 90V180" stroke="#1f6f5c" stroke-width="14"/>
+        <path d="M436 180C436 235 190 230 190 290" stroke="#a9d8bb" stroke-width="14"/>
+        <path d="M436 180C436 235 682 230 682 290" stroke="#a9d8bb" stroke-width="14"/>
+        <path d="M436 180V285" stroke="#1f6f5c" stroke-width="14"/>
+      </g>
+
+      <g font-family="Inter,sans-serif">
+        <circle cx="190" cy="322" r="32" fill="#dcefe8" stroke="#a9d8bb" stroke-width="3"/>
+        <path d="M176 322l10 10 20-22" fill="none" stroke="#1f6f5c" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="190" y="378" text-anchor="middle" font-size="18" fill="#5b5f58" font-weight="500">тема в порядке</text>
+        <circle cx="682" cy="322" r="32" fill="#dcefe8" stroke="#a9d8bb" stroke-width="3"/>
+        <path d="M668 322l10 10 20-22" fill="none" stroke="#1f6f5c" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="682" y="378" text-anchor="middle" font-size="18" fill="#5b5f58" font-weight="500">тема в порядке</text>
+      </g>
+
+      <circle cx="436" cy="334" r="60" fill="#1f6f5c"/>
+      <text x="436" y="345" text-anchor="middle" font-size="29" fill="#fff" font-family="Inter,sans-serif" font-weight="800" letter-spacing="-0.4">Дроби</text>
+      <text x="436" y="416" text-anchor="middle" font-size="17" fill="#1f6f5c" font-family="Inter,sans-serif" font-weight="800" letter-spacing="2">КОРЕНЬ · 6 КЛАСС</text>
+    </svg>
+  </section>
+
+  <section class="verdicts">
+    <div class="card old">
+      <div class="lbl">Обычный тест</div>
+      <div class="q">«62%. Повтори квадратные уравнения.»</div>
+    </div>
+    <div class="card new">
+      <div class="lbl">Tamyr</div>
+      <div class="q">«Корень — дроби. Начни отсюда.»</div>
+    </div>
+  </section>
+
+  <section class="steps">
+    <div class="step">
+      <div class="num">1</div>
+      <h3>Диагностика</h3>
+      <p>Тест спускается по цепочке тем и находит, где ломается.</p>
+    </div>
+    <div class="step">
+      <div class="num">2</div>
+      <h3>Карта знаний</h3>
+      <p>Видно: что освоено, где пробел, где корень.</p>
+    </div>
+    <div class="step">
+      <div class="num">3</div>
+      <h3>План на каждый день</h3>
+      <p>Урок, практика, повторение — с разбором твоей ошибки.</p>
+    </div>
+  </section>
+
+  <footer>
+    <div class="qr"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29" shape-rendering="crispEdges" class="segno"><path fill="#fff" d="M0 0h29v29h-29z"/><path class="qrline" stroke="#16513f" d="M0 0.5h7m1 0h1m1 0h1m1 0h1m1 0h1m3 0h1m1 0h1m1 0h7m-29 1h1m5 0h1m1 0h2m2 0h3m1 0h2m1 0h2m1 0h1m5 0h1m-29 1h1m1 0h3m1 0h1m1 0h3m2 0h1m2 0h1m1 0h1m3 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m2 0h1m1 0h1m1 0h1m2 0h2m2 0h1m1 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m1 0h1m1 0h5m1 0h1m1 0h2m2 0h1m1 0h3m1 0h1m-29 1h1m5 0h1m3 0h1m1 0h1m3 0h3m1 0h1m1 0h1m5 0h1m-29 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-18 1h1m1 0h1m1 0h2m2 0h1m-20 1h1m2 0h6m2 0h1m2 0h1m1 0h2m1 0h3m2 0h1m1 0h3m-28 1h2m2 0h1m2 0h1m1 0h1m1 0h4m1 0h3m3 0h2m1 0h2m-28 1h1m2 0h1m2 0h1m1 0h4m1 0h4m3 0h3m1 0h1m1 0h1m-26 1h1m2 0h1m2 0h3m1 0h2m1 0h2m1 0h1m3 0h1m1 0h3m2 0h1m-27 1h1m3 0h1m2 0h1m2 0h1m1 0h1m1 0h1m1 0h1m1 0h3m5 0h1m-28 1h3m1 0h1m1 0h5m2 0h5m2 0h2m1 0h5m-27 1h3m1 0h1m2 0h1m4 0h4m1 0h1m1 0h3m2 0h1m1 0h1m-27 1h1m1 0h1m2 0h2m1 0h3m3 0h1m5 0h1m1 0h1m1 0h1m1 0h1m-27 1h2m1 0h2m3 0h3m1 0h1m6 0h1m3 0h1m-26 1h1m1 0h1m5 0h2m1 0h2m2 0h1m2 0h4m2 0h1m1 0h2m-28 1h3m2 0h2m1 0h1m1 0h1m1 0h8m1 0h2m1 0h2m2 0h1m-29 1h2m1 0h1m5 0h2m1 0h3m1 0h1m1 0h3m3 0h3m-27 1h2m2 0h3m1 0h1m1 0h2m1 0h1m1 0h1m1 0h1m2 0h8m-20 1h1m4 0h3m2 0h1m1 0h1m3 0h2m-26 1h7m1 0h1m4 0h1m1 0h6m1 0h1m1 0h2m-26 1h1m5 0h1m1 0h3m2 0h1m2 0h2m1 0h2m3 0h1m3 0h1m-29 1h1m1 0h3m1 0h1m1 0h6m1 0h2m2 0h7m1 0h1m-28 1h1m1 0h3m1 0h1m1 0h2m1 0h1m1 0h4m1 0h1m9 0h1m-29 1h1m1 0h3m1 0h1m2 0h1m2 0h2m1 0h1m1 0h2m2 0h1m1 0h2m1 0h3m-29 1h1m5 0h1m2 0h4m2 0h2m4 0h1m1 0h1m1 0h2m1 0h1m-29 1h7m1 0h1m2 0h1m1 0h1m5 0h7"/></svg></div>
+    <div class="cta">
+      <div class="t">Попробуйте диагностику</div>
+      <div class="u">sas1k00.github.io/hackathonchik</div>
+      <div class="chips">
+        <span class="chip">Под ЕНТ</span><span class="chip">Бесплатно</span><span class="chip">Офлайн</span><span class="chip">Русский · Қазақша</span>
+      </div>
+    </div>
+    <div class="team">
+      <b>Команда</b>
+      Bolatbay Yersultan<br>Zharkynuly Eren<br>Kydyrkhan Olzhas
+    </div>
+  </footer>
+
+</main>
+</body>
+</html>
