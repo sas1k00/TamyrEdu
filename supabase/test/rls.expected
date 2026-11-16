@@ -69,3 +69,18 @@ denied: permission denied for table mock_tests (гость)
 Готово: teacher@school.kz больше не учитель
 работ: 0
 Готово: teacher@school.kz — учитель
+19. статистика пилота: учитель видит сводку своего класса; ученик, другой учитель и весь проект — нет
+класс: учеников 1, ответов 1, дней 1
+denied: admins only (весь проект)
+denied: admins only (админ-панель)
+denied: not your class (другой учитель)
+denied: not your class (ученик)
+denied: permission denied for function set_admin (ученик делает себя админом)
+denied: permission denied for function admin_overview (гость)
+20. админ видит все классы, учеников (без учителей) и весь проект; снятый флаг действует сразу
+Готово: nurlan@x.kz — админ
+проект: ответов 1
+чужой класс: учеников 1
+классы: 11 «Б» (Олжас, 1); ученики: Айгерим ответов 1, Нурлан ответов 0
+Готово: nurlan@x.kz больше не админ
+denied: admins only

@@ -143,3 +143,32 @@ select public.set_teacher('teacher@school.kz', false);
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a"}', false); set role authenticated;
 select 'работ: ' || count(*) from public.mock_tests; reset role;
 select public.set_teacher('teacher@school.kz');
+
+\echo '19. статистика пилота: учитель видит сводку своего класса; ученик, другой учитель и весь проект — нет'
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a"}', false); set role authenticated;
+select 'класс: учеников ' || (s ->> 'students') || ', ответов ' || (s ->> 'answers') || ', дней ' || json_array_length(s -> 'days')
+  from (select public.pilot_stats(:'cls') as s) x;
+select public._try($$select public.pilot_stats(null)$$) || ' (весь проект)';
+select public._try($$select public.admin_overview()$$) || ' (админ-панель)';
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000d"}', false); set role authenticated;
+select public._try(format($$select public.pilot_stats(%L)$$, :'cls')) || ' (другой учитель)'; reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b"}', false); set role authenticated;
+select public._try(format($$select public.pilot_stats(%L)$$, :'cls')) || ' (ученик)';
+select public._try($$select public.set_admin('aigerim@x.kz')$$) || ' (ученик делает себя админом)';
+reset role; set role anon;
+select public._try($$select public.admin_overview()$$) || ' (гость)';
+reset role;
+
+\echo '20. админ видит все классы, учеников (без учителей) и весь проект; снятый флаг действует сразу'
+select public.set_admin('nurlan@x.kz');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c"}', false); set role authenticated;
+select 'проект: ответов ' || (public.pilot_stats(null) ->> 'answers');
+select 'чужой класс: учеников ' || (public.pilot_stats(:'cls') ->> 'students');
+select 'классы: ' || (select string_agg(c ->> 'name' || ' (' || (c ->> 'teacher') || ', ' || (c ->> 'students') || ')', ', ') from json_array_elements(o -> 'classes') c)
+    || '; ученики: ' || (select string_agg((s ->> 'name') || ' ответов ' || (s ->> 'answers'), ', ' order by s ->> 'name') from json_array_elements(o -> 'students') s)
+  from (select public.admin_overview() as o) x;
+reset role;
+select public.set_admin('nurlan@x.kz', false);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c"}', false); set role authenticated;
+select public._try($$select public.admin_overview()$$); reset role;

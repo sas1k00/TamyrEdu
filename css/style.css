@@ -631,3 +631,14 @@ sup { font-size: .7em; }
 .ent-lost { list-style: none; padding: 0; margin: 0; }
 .ent-lost li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
 @media (max-width: 720px) { .ent-review details > :not(summary) { margin-left: 0; } .ent-items li { display: grid; } }
+
+/* Статистика пилота (учитель, админ) и админ-панель */
+.pilot h3 { margin: 18px 0 6px; font-size: 1rem; }
+.stats.pilot-kpi { grid-template-columns: repeat(4, 1fr); margin: 10px 0; }
+.stats.pilot-kpi b { font-size: 1.4rem; }
+.pilot-goal { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; margin-bottom: 10px; }
+.pilot-goal i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.pilot .simtable td, .adm-table td { vertical-align: top; }
+.adm-table { min-width: 720px; }
+.pilot .simtable { min-width: 520px; }
+@media (max-width: 720px) { .stats.pilot-kpi { grid-template-columns: repeat(2, 1fr); } }
