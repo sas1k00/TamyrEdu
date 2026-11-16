@@ -44,7 +44,7 @@
       refresh_token: r.refresh_token || null,
       expires_at: Date.now() + (Number(r.expires_in) || 3600) * 1000,
       user: { id: c.sub, email: String((r.user && r.user.email) || c.email || ''), name: typeof meta.name === 'string' ? meta.name.slice(0, 40) : '',
-        role: app.role === 'teacher' ? 'teacher' : 'student' }
+        role: app.role === 'teacher' ? 'teacher' : 'student', admin: app.admin === true }
     };
   }
 
@@ -166,13 +166,16 @@
     enabled,
     user: () => (session ? session.user : null),
     isTeacher: () => !!session && session.user.role === 'teacher',
+    /* Админ (supabase/pilot.sql → set_admin): видит все классы и учеников. Ставит только владелец проекта. */
+    isAdmin: () => !!session && session.user.admin === true,
     /* Роль могли выдать или снять уже после входа: спрашиваем у сервера свежую. true — роль изменилась. */
     async refreshRole() {
       if (!enabled || !session) return false;
       const u = await authed('/auth/v1/user');
-      const role = u && u.app_metadata && u.app_metadata.role === 'teacher' ? 'teacher' : 'student';
-      if (!session || session.user.role === role) return false;
-      session.user.role = role; store(session); changed();
+      const app = (u && u.app_metadata) || {};
+      const role = app.role === 'teacher' ? 'teacher' : 'student', admin = app.admin === true;
+      if (!session || (session.user.role === role && session.user.admin === admin)) return false;
+      session.user.role = role; session.user.admin = admin; store(session); changed();
       return true;
     },
     status: () => status,
@@ -263,6 +266,12 @@
       save: (id, classId, name, taken, topics, results) => authed('/rest/v1/rpc/save_mock_test', { method: 'POST',
         body: { p_id: id, p_class: classId, p_name: name, p_taken: taken, p_topics: topics, p_results: results } }),
       drop: id => authed('/rest/v1/mock_tests?id=eq.' + encodeURIComponent(id), { method: 'DELETE' })
+    },
+
+    /* Статистика пилота (supabase/pilot.sql): класс — учителю этого класса или админу; null — весь проект, только админу. */
+    pilot: {
+      stats: classId => authed('/rest/v1/rpc/pilot_stats', { method: 'POST', body: { p_class: classId || null } }),
+      overview: () => authed('/rest/v1/rpc/admin_overview', { method: 'POST', body: {} })
     },
 
     /* Журнал ответов для будущих моделей (supabase/answers.sql). Пишется только у вошедших: при регистрации они дали согласие.

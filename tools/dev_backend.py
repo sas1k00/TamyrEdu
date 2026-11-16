@@ -5,6 +5,7 @@
     py tools/dev_backend.py --confirm       # как в Supabase по умолчанию: сначала подтвердить почту
     py tools/dev_backend.py --ttl 5         # токен живёт 5 секунд — проверить обновление токена
     py tools/dev_backend.py --teachers t@school.kz   # эти почты получают роль учителя (как set_teacher в supabase/teachers.sql)
+    py tools/dev_backend.py --admins me@x.kz         # эти почты — админы (как set_admin в supabase/pilot.sql)
 
 Потом открыть приложение так: http://localhost:8771/index.html?backend=http://127.0.0.1:8772
 
@@ -21,9 +22,12 @@ p.add_argument('--confirm', action='store_true', help='требовать под
 p.add_argument('--ttl', type=int, default=3600, help='срок жизни токена, секунды')
 p.add_argument('--teachers', default='', help='почты учителей через запятую')
 p.add_argument('--old-answers', action='store_true', help='таблица answers без новых столбцов recall/explore/engine (как до перевыполнения answers.sql)')
+p.add_argument('--admins', default='', help='почты админов через запятую')
+p.add_argument('--no-pilot', action='store_true', help='функций статистики нет (supabase/pilot.sql не выполнен)')
 p.add_argument('--no-mock', action='store_true', help='таблиц пробного ЕНТ нет (supabase/mock.sql не выполнен)')
 ARGS = p.parse_args()
 TEACHERS = {e.strip().lower() for e in ARGS.teachers.split(',') if e.strip()}
+ADMINS = {e.strip().lower() for e in ARGS.admins.split(',') if e.strip()}
 
 USERS = {}      # email -> {id, email, salt, hash, name, confirmed}
 ACCESS = {}     # access_token -> (user_id, expires)
@@ -47,7 +51,42 @@ def hash_password(password, salt):
 
 
 def app_meta(user):
-    return {'role': 'teacher' if user['email'].lower() in TEACHERS else 'student'}
+    meta = {'role': 'teacher' if user['email'].lower() in TEACHERS else 'student'}
+    if user['email'].lower() in ADMINS:
+        meta['admin'] = True
+    return meta
+
+
+def parse_ts(v):
+    try:
+        return time.mktime(time.strptime(str(v)[:19], '%Y-%m-%dT%H:%M:%S')) - time.timezone
+    except (ValueError, TypeError):
+        return time.time()
+
+
+def pilot_stats(rows, students):
+    """То же, что public.pilot_stats в supabase/pilot.sql, но по журналу в памяти."""
+    now = time.time()
+    recent = lambda r, days: now - parse_ts(r.get('at')) < days * 86400
+    pct = lambda xs: round(100 * sum(1 for r in xs if r.get('correct')) / len(xs)) if xs else None
+    days, qs = {}, {}
+    for r in rows:
+        if recent(r, 14):
+            days.setdefault(time.strftime('%Y-%m-%d', time.gmtime(parse_ts(r.get('at')) + 5 * 3600)), []).append(r)
+        if not str(r.get('question', '')).startswith('gen:'):
+            qs.setdefault((r.get('question'), r.get('topic')), []).append(r)
+    questions = [{'question': q, 'topic': tp, 'n': len(xs), 'correct_pct': pct(xs),
+                  'dont_know_pct': round(100 * sum(1 for r in xs if r.get('choice') is None) / len(xs)),
+                  'avg_seconds': round(sum(r.get('ms') or 0 for r in xs) / len(xs) / 1000)} for (q, tp), xs in qs.items() if len(xs) >= 10]
+    questions.sort(key=lambda x: (x['correct_pct'], -x['n']))
+    return {'students': students, 'active7': len({r['user_id'] for r in rows if recent(r, 7)}),
+            'answers': len(rows), 'answers7': sum(1 for r in rows if recent(r, 7)),
+            'checks': sum(1 for r in rows if r.get('mode') == 'check'),
+            'check_students': len({r['user_id'] for r in rows if r.get('mode') == 'check'}),
+            'explore': sum(1 for r in rows if r.get('explore')),
+            'no_engine7': sum(1 for r in rows if not r.get('engine') and recent(r, 7)),
+            'days': [{'day': d, 'students': len({r['user_id'] for r in xs}), 'answers': len(xs), 'correct_pct': pct(xs)} for d, xs in sorted(days.items(), reverse=True)],
+            'questions': questions[:8]}
 
 
 def session_for(user):
@@ -295,6 +334,41 @@ class Handler(BaseHTTPRequestHandler):
             if method == 'DELETE':
                 ANSWERS[:] = [r for r in ANSWERS if r['user_id'] != user['id']]
                 return self.send(204)
+
+        # --- статистика пилота и админ-панель: те же правила, что в supabase/pilot.sql ---
+        is_admin = bool(user) and user['email'].lower() in ADMINS
+        if not ARGS.no_pilot and path == '/rest/v1/rpc/pilot_stats' and method == 'POST':
+            cid = self.body().get('p_class')
+            if cid is None:
+                if not is_admin:
+                    return self.send(400, {'code': 'P0001', 'message': 'admins only'})
+                return self.send(200, pilot_stats(ANSWERS, len({r['user_id'] for r in ANSWERS})))
+            if not (is_admin or (is_teacher and cid in taught)):
+                return self.send(400, {'code': 'P0001', 'message': 'not your class'})
+            ids = {m['user_id'] for m in MEMBERS if m['class_id'] == cid}
+            return self.send(200, pilot_stats([r for r in ANSWERS if r['user_id'] in ids], len(ids)))
+        if not ARGS.no_pilot and path == '/rest/v1/rpc/admin_overview' and method == 'POST':
+            if not is_admin:
+                return self.send(400, {'code': 'P0001', 'message': 'admins only'})
+            classes = [{'id': c['id'], 'name': c['name'], 'created_at': c['created_at'],
+                        'teacher': (by_id(c['teacher_id']) or {}).get('name') or (by_id(c['teacher_id']) or {}).get('email'),
+                        'students': sum(1 for m in MEMBERS if m['class_id'] == c['id'])} for c in CLASSES.values()]
+            students = []
+            for u in USERS.values():
+                mine = [r for r in ANSWERS if r['user_id'] == u['id']]
+                cl = [m['class_id'] for m in MEMBERS if m['user_id'] == u['id']]
+                prog = PROGRESS.get(u['id'])
+                if u['email'].lower() in TEACHERS or not (mine or cl or prog):
+                    continue
+                last = max([parse_ts(r.get('at')) for r in mine] + ([parse_ts(prog['updated_at'])] if prog and prog.get('updated_at') else []), default=None)
+                students.append({'user_id': u['id'], 'name': u['name'] or ((prog or {}).get('state') or {}).get('name') or '', 'classes': cl,
+                                 'state': prog and prog['state'], 'updated_at': prog and prog.get('updated_at'),
+                                 'answers': len(mine), 'answers7': sum(1 for r in mine if time.time() - parse_ts(r.get('at')) < 7 * 86400),
+                                 'correct_pct': round(100 * sum(1 for r in mine if r.get('correct')) / len(mine)) if mine else None,
+                                 'checks': sum(1 for r in mine if r.get('mode') == 'check'),
+                                 'last_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(last)) if last else None})
+            students.sort(key=lambda s: s['last_at'] or '', reverse=True)
+            return self.send(200, {'classes': sorted(classes, key=lambda c: c['created_at']), 'students': students})
 
         # --- пробный ЕНТ: те же правила, что в supabase/mock.sql (только учитель класса) ---
         if not ARGS.no_mock and path == '/rest/v1/rpc/save_mock_test' and method == 'POST':

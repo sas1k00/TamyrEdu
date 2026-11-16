@@ -738,6 +738,7 @@
         <h1>${esc(user.name || user.email)}</h1>
         <p class="muted">${esc(user.email)}</p>
         ${A.isTeacher() ? `<p><span class="chip">${t('Учительский аккаунт')}</span> <a class="btn small" href="#teacher">${t('Панель учителя')}</a></p>` : ''}
+        ${A.isAdmin() ? `<p><span class="chip">${t('Админ')}</span> <a class="btn small" href="#admin">${t('Админ-панель')}</a></p>` : ''}
         ${ui.auth.note ? `<p class="banner">${esc(ui.auth.note)}</p>` : ''}
         ${remote ? `
           <div class="note">
@@ -933,7 +934,7 @@
     if (!A.enabled) return;
     const calm = () => ['home', 'map', 'progress', 'account', ''].includes((location.hash.replace('#', '') || 'home').split('/')[0]);
     // вошёл, вышел или сменилась роль: обновляем шапку, а с панели учителя уводим, если она больше не положена
-    A.onChange = () => { ui.myClasses = null; chromeAccount(); if (location.hash.split('/')[0] === '#teacher') route(); };
+    A.onChange = () => { ui.myClasses = null; chromeAccount(); if (['#teacher', '#admin'].includes(location.hash.split('/')[0])) route(); };
     A.onStatus = () => { if (location.hash === '#account' && A.user() && !document.querySelector('#pass-form')) viewAccount(); };
     if (A.arrival === 'recovery') ui.auth.mode = 'newpass';
     if (A.arrival === 'confirmed') ui.auth.note = t('Почта подтверждена — ты в аккаунте.');
@@ -984,6 +985,13 @@
       if (A.user()) { history.replaceState(null, '', '#home'); return route(); }
       ui.auth.note = t('Эта страница — для учителей. Войди учительским аккаунтом.');
       history.replaceState(null, '', '#account');
+      return route();
+    }
+    if (view === 'admin') {
+      // админ-панель — только для аккаунта с флагом admin (supabase/pilot.sql); права всё равно проверяет база
+      if (A.enabled && A.isAdmin()) return T.viewAdmin(app);
+      if (A.enabled && !A.user()) { ui.auth.note = t('Эта страница — для админа. Войди своим аккаунтом.'); history.replaceState(null, '', '#account'); return route(); }
+      history.replaceState(null, '', '#home');
       return route();
     }
     if (view === 'account') { viewAccount(); return resumeBanner(); }

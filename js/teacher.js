@@ -48,6 +48,53 @@
     cls.data[id] = {};
     (rows || []).forEach(r => { cls.data[id][r.user_id] = r; });
     await loadMock(id);
+    await loadPilot(id);
+  }
+
+  /* ---------- Статистика пилота (supabase/pilot.sql) ----------
+     Сводные числа из журнала ответов: активность, трудные задачи, накопленные повторения. Ответы учеников напрямую учителю не видны. */
+  const pilot = { classId: null, data: null, missing: false, error: null, open: false };
+  async function loadPilot(id) {
+    pilot.classId = id; pilot.data = null; pilot.missing = false; pilot.error = null;
+    try { pilot.data = await A.pilot.stats(id); }
+    catch (e) { if (e.status === 404) pilot.missing = true; else pilot.error = t('Не удалось загрузить статистику.'); }
+  }
+
+  /* Отрисовка статистики — общая для учителя (один класс) и админ-панели (класс или весь проект). */
+  T.pilotHtml = function (s, project) {
+    const pct = v => (v === null || v === undefined ? '—' : v + '%');
+    const few = n => n < 20 ? ` <span class="chip small warn">${t('мало данных')}</span>` : '';
+    const reviews = Math.floor(s.checks / 2);
+    const qText = id => (T.QUESTION[id] ? T.math(T.QUESTION[id].text) : esc(id));
+    return `<div class="pilot">
+      <div class="stats pilot-kpi">
+        <div><b>${s.active7}</b><span>${project ? t('занимались за 7 дней') : t('из {n} занимались за 7 дней', { n: s.students })}</span></div>
+        <div><b>${s.answers7}</b><span>${t('ответов за 7 дней')}</span></div>
+        <div><b>${s.answers}</b><span>${t('ответов всего')}</span></div>
+        <div><b>${reviews}</b><span>${project ? t('повторений из ~1000 для настройки FSRS') : t('повторений')}</span></div>
+      </div>
+      ${project ? `<div class="pilot-goal" role="img" aria-label="${t('{n} из 1000', { n: reviews })}"><i style="width:${Math.min(100, reviews / 10)}%"></i></div>` : ''}
+      ${s.no_engine7 ? `<p class="bad-msg small">${t('{n} ответов за неделю пришли без версии движка: у части учеников старая версия приложения или в базе нет новых столбцов. Выполните supabase/pilot.sql и попросите учеников обновить страницу.', { n: s.no_engine7 })}</p>` : ''}
+      <h3>${t('Активность за 14 дней')}</h3>
+      ${s.days.length ? `<div class="heat-wrap"><table class="simtable"><thead><tr><th>${t('День')}</th><th>${t('Учеников')}</th><th>${t('Ответов')}</th><th>${t('Верно')}</th></tr></thead>
+        <tbody>${s.days.map(d => `<tr><td>${esc(T.fmtDate(d.day + 'T12:00:00'))}</td><td>${d.students}</td><td>${d.answers}</td><td>${pct(d.correct_pct)}</td></tr>`).join('')}</tbody></table></div>`
+        : `<p class="muted small">${t('За две недели ответов нет.')}</p>`}
+      <h3>${t('Самые трудные задачи')}</h3>
+      <p class="muted small">${t('n — сколько ответов за цифрой. Меньше 20 — пока подсказка, а не вывод: проверьте условие и правильный ответ, но не делайте выводов о классе.')}</p>
+      ${s.questions.length ? `<div class="heat-wrap"><table class="simtable"><thead><tr><th>${t('Задача')}</th><th>n</th><th>${t('Верно')}</th><th>${t('«Не знаю»')}</th><th>${t('Секунд')}</th></tr></thead>
+        <tbody>${s.questions.map(q => `<tr><td>${qText(q.question)}<br><span class="muted small">${esc(T.TOPIC[q.topic] ? title(q.topic) : q.topic)}</span></td><td>${q.n}${few(q.n)}</td><td>${pct(q.correct_pct)}</td><td>${pct(q.dont_know_pct)}</td><td>${q.avg_seconds === null ? '—' : q.avg_seconds}</td></tr>`).join('')}</tbody></table></div>`
+        : `<p class="muted small">${t('Пока ни на одну задачу нет 10 ответов.')}</p>`}
+    </div>`;
+  };
+
+  function pilotSection() {
+    if (pilot.classId !== cls.sel) return '';
+    return `<details class="cls-members cls-pilot"${pilot.open ? ' open' : ''}><summary>${t('Статистика пилота')}</summary>
+      <p class="muted small">${t('Из журнала ответов учеников, которые вошли в аккаунт. Только сводные числа по классу.')}</p>
+      ${pilot.missing ? `<p class="bad-msg small">${t('В базе ещё нет статистики пилота: выполните supabase/pilot.sql в Supabase.')}</p>` : ''}
+      ${pilot.error ? `<p class="bad-msg small" role="alert">${esc(pilot.error)}</p>` : ''}
+      ${pilot.data ? T.pilotHtml(pilot.data, false) : ''}
+    </details>`;
   }
 
   /* ---------- Пробный ЕНТ (supabase/mock.sql) ----------
@@ -211,7 +258,8 @@
             : `<p class="muted small">${t('Пока никто не вступил. Напишите код на доске — это займёт минуту.')}</p>`}
           <button class="btn small danger" id="drop-class">${cls.confirmDrop ? t('Точно удалить класс «{name}»?', { name: esc(sel.name) }) : t('Удалить класс')}</button>
         </details>
-        ${mockHtml(members, data)}` : ''}
+        ${mockHtml(members, data)}
+        ${pilotSection()}` : ''}
     </section>`;
   }
 
@@ -222,6 +270,8 @@
     if (det) det.addEventListener('toggle', () => { cls.open = det.open; });
     const act = async (fn, fail) => { try { await fn(); } catch (e) { cls.error = fail; } await loadClasses(); };
     bindMock(app, act);
+    const pd = app.querySelector('.cls-pilot');
+    if (pd) pd.addEventListener('toggle', () => { pilot.open = pd.open; });
     app.querySelector('#new-class').addEventListener('submit', e => {
       e.preventDefault();
       const name = app.querySelector('#cname').value.trim();
@@ -231,7 +281,10 @@
     app.querySelectorAll('[data-cls]').forEach(b => b.addEventListener('click', async () => {
       cls.sel = b.dataset.cls; cls.confirmDrop = false; cls.kick = null; mock.form = null; mock.confirm = null;
       if (!cls.data[cls.sel]) { try { await loadClass(cls.sel); } catch (e) { cls.error = t('Не удалось загрузить классы. Проверь интернет и обнови страницу.'); } }
-      else if (mock.classId !== cls.sel) await loadMock(cls.sel);
+      else {
+        if (mock.classId !== cls.sel) await loadMock(cls.sel);
+        if (pilot.classId !== cls.sel) await loadPilot(cls.sel);
+      }
       rerender();
     }));
     const copy = app.querySelector('#copy-link');
